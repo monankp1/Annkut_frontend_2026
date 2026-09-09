@@ -1,10 +1,16 @@
 // src/pages/AnnkutSevakList.jsx
-import axios from "axios";
-import React, { useEffect, useMemo, useState } from "react";
-import { BACKEND_ENDPOINT } from "../api/api";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import api, { num, errorText } from "../api/annkut";
+import {
+  getSevak,
+  hasMandalScope,
+  canEditSevak,
+  canDeactivateSevak,
+} from "../api/session";
 import Header from "../components/Header";
 import AddAnnkutSevakModal from "../components/AddAnnkutSevakModal";
 import EditSevakModal from "../components/EditSevakModal";
+import { toast, ToastContainer } from "react-toastify";
 
 import {
   Box,
@@ -31,155 +37,104 @@ import {
 } from "@mui/material";
 
 export default function AnnkutSevakList() {
-  // ---------- identity / role ----------
-  const sevak = JSON.parse(localStorage.getItem("sevakDetails")) || {};
-  const role = sevak?.role_code || "";
-  const sevakId = sevak?.sevak_id;
+  // Identity comes from the token. This is only here to decide what to draw —
+  // the server re-checks everything and answers 403 on its own.
+  const me = getSevak();
+  const scoped = hasMandalScope(me);
+  const ownMandal = me?.mandal || null;
 
-  const leadershipRoles = [
-    "Nirikshak",
-    "Nirdeshak",
-    "Sanyojak",
-    "Sant Nirdeshak",
-    "Admin",
-  ];
+  // A mandal sanchalak may correct a sevak's details; only an admin may take
+  // one off the roster.
+  const mayEdit = canEditSevak(me);
+  const mayDeactivate = canDeactivateSevak(me);
+  const showActions = mayEdit || mayDeactivate;
 
-  const isAdmin = role === "ADMIN";
-  const isSanchalak = role === "SANCHALAK";
-  const isLeader =
-    isAdmin || leadershipRoles.some((r) => role?.toLowerCase().includes(r.toLowerCase()));
-
-  // ---------- state ----------
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // stats
-  const [formTarget, setFormTarget] = useState(null);
+  const [summary, setSummary] = useState(null);
 
-  // mandals (grid view)
   const [mandals, setMandals] = useState([]);
   const [qMandal, setQMandal] = useState("");
 
-  // sevaks (table view)
   const [sevaks, setSevaks] = useState([]);
   const [qSevak, setQSevak] = useState("");
 
-  // mode: "mandals" | "sevaks"
-  const initialMode = isLeader ? "mandals" : "sevaks";
-  const [mode, setMode] = useState(initialMode);
+  // "mandals" | "sevaks"
+  const [mode, setMode] = useState(scoped ? "mandals" : "sevaks");
 
-  // selected mandal context
-  const [selectedMandal, setSelectedMandal] = useState("");
-  const norm = (s) => String(s || "").trim().toLowerCase();
+  // The mandal being looked at: { id, name }. Every write needs the id.
+  const [selectedMandal, setSelectedMandal] = useState(
+    scoped ? null : ownMandal
+  );
 
-  // modals
   const [showAddAnnkutSevak, setShowAddAnnkutSevak] = useState(false);
   const [editModal, setEditModal] = useState(false);
   const [selectedSevakRow, setSelectedSevakRow] = useState(null);
 
   const [openConfirmDialog, setOpenConfirmDialog] = useState(false);
-  const [itemToDelete, setItemToDelete] = useState(null);
+  const [itemToDeactivate, setItemToDeactivate] = useState(null);
 
-  // ---------- fetchers (plain functions; no deps, no re-creations) ----------
-  async function fetchTargetDetailsOnce() {
+  // ---------- fetchers ----------
+
+  const fetchSummary = useCallback(async (mandalId) => {
     try {
-      const res = await axios.post(`${BACKEND_ENDPOINT}seva/get_seva_count`, {
-        sevak_id: sevakId,
-      });
-      setFormTarget(res.data || {});
-    } catch (err) {
-      console.error("Error fetching target count", err);
+      const res = await api.summary(mandalId ? { mandal_id: mandalId } : {});
+      setSummary(res || null);
+    } catch (e) {
+      console.error("Error fetching summary:", e);
     }
-  }
+  }, []);
 
-  async function fetchMandalsOnce() {
+  const fetchMandals = useCallback(async () => {
+    setLoading(true);
     try {
-      const res = await axios.post(`${BACKEND_ENDPOINT}sevak/get_mandal_list`, {
-        sevak_id: sevakId,
-      });
-      const arr =
-        res?.data?.mandal_array ||
-        res?.data?.mandals ||
-        res?.data?.data ||
-        [];
+      const res = await api.mandals({});
+      const arr = res?.mandal_array;
       setMandals(Array.isArray(arr) ? arr : []);
     } catch (e) {
       console.error("Failed to fetch mandals:", e);
       setMandals([]);
+      setError(errorText(e, "Failed to load mandals."));
+    } finally {
+      setLoading(false);
     }
-  }
+  }, []);
 
-  async function fetchSevaksForScope({ mandalName } = {}) {
+  const fetchSevaks = useCallback(async (mandalId) => {
     setError("");
     setLoading(true);
     try {
-      let payload = {};
-
-      if (isSanchalak) {
-        payload.sevak_id = sevakId;
-      } else if (isLeader && mandalName) {
-        payload.mandal = mandalName || '';
-        payload.sevak_id = sevakId; // tolerate either key
-      } else {
-        payload.sevak_id = sevakId;
-      }
-
-      const res = await axios.post(`${BACKEND_ENDPOINT}sevak/get_sevak`, payload);
-
-      // 1) pull the sevaks array (your response uses `sevak`)
-      let rows = res?.data?.sevak || res?.data?.sevaks || res?.data?.data || [];
-
-      // 2) keep the sanchalak label from the wrapper if you want to show it
-      const sanchalakLabel = res?.data?.["Sanchalak Name"];
-      // if (sanchalakLabel && !selectedMandal) {
-      //   // optional: show who you fetched under
-      //   setSelectedMandal(sanchalakLabel);
-      // }
-
-      // 3) Only client-filter by mandal if rows actually carry mandal_name
-      if (
-        isLeader &&
-        mandalName &&
-        Array.isArray(rows) &&
-        rows.length > 0 &&
-        Object.prototype.hasOwnProperty.call(rows[0], "mandal_name")
-      ) {
-        const needle = norm(mandalName);
-        rows = rows.filter(
-          (r) => norm(r?.mandal_name) === needle
-        );
-      }
-
+      // An unauthorised mandal_id is a 403, never a silently empty list.
+      const res = await api.sevaks(mandalId ? { mandal_id: mandalId } : {});
+      const rows = res?.sevak;
       setSevaks(Array.isArray(rows) ? rows : []);
     } catch (e) {
       console.error("Error fetching sevaks:", e);
       setSevaks([]);
-      setError("Failed to load sevaks.");
+      setError(errorText(e, "Failed to load sevaks."));
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
-  // ---------- run ONCE on mount ----------
   useEffect(() => {
-    (async () => {
-      await fetchTargetDetailsOnce();
-      if (isLeader) {
-        await fetchMandalsOnce(); // leaders see mandals grid
-      } else {
-        await fetchSevaksForScope(); // sanchalak sees own sevaks
-      }
-    })();
-    // EMPTY deps => runs exactly once
+    fetchSummary();
+    if (scoped) fetchMandals();
+    else if (ownMandal?.id) fetchSevaks(ownMandal.id);
+    // Runs once; everything after this is an explicit user action.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ---------- derived ----------
+
   const filteredMandals = useMemo(() => {
     const needle = qMandal.trim().toLowerCase();
     if (!needle) return mandals;
     return (mandals || []).filter((m) =>
-      JSON.stringify(m || {}).toLowerCase().includes(needle)
+      JSON.stringify(m || {})
+        .toLowerCase()
+        .includes(needle)
     );
   }, [mandals, qMandal]);
 
@@ -187,57 +142,51 @@ export default function AnnkutSevakList() {
     const needle = qSevak.trim().toLowerCase();
     if (!needle) return sevaks;
     return (sevaks || []).filter((s) =>
-      JSON.stringify(s || {}).toLowerCase().includes(needle)
+      JSON.stringify(s || {})
+        .toLowerCase()
+        .includes(needle)
     );
   }, [sevaks, qSevak]);
 
   const sum = (rows, field) =>
-    rows.reduce((acc, r) => acc + (parseInt(r?.[field] ?? 0, 10) || 0), 0);
+    rows.reduce((acc, r) => acc + num(r?.[field]), 0);
 
-  const groupedByXetra = useMemo(() => {
+  // Mandals arrive ordered by area then name; grouping keeps that order.
+  const groupedByArea = useMemo(() => {
     const arr = Array.isArray(filteredMandals) ? filteredMandals : [];
     const map = new Map();
+
     for (const item of arr) {
-      const key = String(item?.mandal_xetra ?? "").trim();
+      const key = String(item?.area_name ?? "").trim();
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(item);
     }
-    for (const [, rows] of map) {
-      rows.sort((a, b) =>
-        (a?.mandal_name || a?.name || "").localeCompare(b?.mandal_name || b?.name || "")
-      );
-    }
-    return Array.from(map.entries()).sort((a, b) =>
-      (a[0] || "").localeCompare(b[0] || "", undefined, { numeric: true, sensitivity: "base" })
-    );
+
+    return Array.from(map.entries());
   }, [filteredMandals]);
 
-  // ---------- handlers (explicit user actions only) ----------
+  // ---------- handlers ----------
+
   async function handleRefresh() {
-    if (mode === "mandals" && isLeader) {
-      await fetchMandalsOnce();
-    } else if (mode === "sevaks") {
-      if (isLeader && selectedMandal) {
-        await fetchSevaksForScope({ mandalName: selectedMandal });
-      } else {
-        await fetchSevaksForScope();
-      }
-    }
+    await fetchSummary(selectedMandal?.id);
+    if (mode === "mandals" && scoped) await fetchMandals();
+    else await fetchSevaks(selectedMandal?.id);
   }
 
   async function handleMandalCardClick(m) {
-    const mandalName = m?.name || m?.mandal_name || "";
-    setSelectedMandal(mandalName);
+    const picked = { id: num(m?.id), name: m?.name || "" };
+    setSelectedMandal(picked);
+    setQSevak("");
     setMode("sevaks");
-    await fetchSevaksForScope({ mandalName });
+    await Promise.all([fetchSevaks(picked.id), fetchSummary(picked.id)]);
   }
 
   function handleBackToMandals() {
-    setSelectedMandal("");
+    setSelectedMandal(null);
     setQSevak("");
     setSevaks([]);
     setMode("mandals");
-    // do NOT refetch automatically — only on Refresh or when user expects it
+    fetchSummary();
   }
 
   function handleEdit(row) {
@@ -245,38 +194,50 @@ export default function AnnkutSevakList() {
     setEditModal(true);
   }
 
-  // optional delete flow (kept)
-  function handleDeletePrompt(id) {
-    setItemToDelete(id);
+  function handleDeactivatePrompt(row) {
+    setItemToDeactivate(row);
     setOpenConfirmDialog(true);
   }
-  async function handleConfirmDelete() {
+
+  async function handleConfirmDeactivate() {
+    const code = itemToDeactivate?.sevak_code;
+    if (!code) return;
+
     try {
-      // await axios.post(`${BACKEND_ENDPOINT}sevak/delete_sevak`, { sevak_id: itemToDelete });
-      if (isLeader && selectedMandal) await fetchSevaksForScope({ mandalName: selectedMandal });
-      else await fetchSevaksForScope();
+      const res = await api.deactivateSevak(code);
+      toast.success(res?.message || "Sevak deactivated.");
+      await fetchSevaks(selectedMandal?.id);
     } catch (e) {
-      console.error("Delete error:", e);
+      console.error("Deactivate error:", e);
+      toast.error(errorText(e, "Could not deactivate that sevak."));
     } finally {
       setOpenConfirmDialog(false);
-      setItemToDelete(null);
+      setItemToDeactivate(null);
     }
   }
 
+  // Adding needs a mandal to add into, so it waits until one is chosen.
+  const addTargetMandal = selectedMandal?.id ? selectedMandal : null;
+
   // ---------- render ----------
+
   return (
     <>
       <Header />
 
       <Box p={2}>
-        {/* Top bar */}
-        <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
+        <Box
+          display="flex"
+          alignItems="center"
+          justifyContent="space-between"
+          mb={2}
+        >
           <Typography variant="h5">
             {mode === "mandals" ? "Mandals" : "Annkut Sevaks"}
           </Typography>
 
           <Box display="flex" alignItems="center" gap={1}>
-            {(isSanchalak || isAdmin) && (
+            {addTargetMandal && mayEdit && (
               <Button
                 variant="outlined"
                 onClick={() => setShowAddAnnkutSevak(true)}
@@ -294,7 +255,7 @@ export default function AnnkutSevakList() {
           </Box>
         </Box>
 
-        {/* Stats boxes */}
+        {/* Stats */}
         <Grid container spacing={2} mb={2}>
           <Grid item xs={12}>
             <Paper sx={{ p: 2 }}>
@@ -302,13 +263,12 @@ export default function AnnkutSevakList() {
                 Target
               </Typography>
               <Typography variant="h6">
-                {formTarget?.total_target ?? 0}
+                {num(summary?.total_target)}
               </Typography>
             </Paper>
           </Grid>
         </Grid>
 
-        {/* Row with 4 cards */}
         <Grid container spacing={2} mb={2}>
           <Grid item xs={12} sm={6} md={3}>
             <Paper sx={{ p: 2 }}>
@@ -316,7 +276,7 @@ export default function AnnkutSevakList() {
                 Filled Forms
               </Typography>
               <Typography variant="h6">
-                {formTarget?.total_filled_form ?? 0}
+                {num(summary?.total_filled_form)}
               </Typography>
             </Paper>
           </Grid>
@@ -327,7 +287,7 @@ export default function AnnkutSevakList() {
                 ₹500 Seva
               </Typography>
               <Typography variant="h6">
-                {formTarget?.seva_five_hundered ?? 0}
+                {num(summary?.seva_five_hundered)}
               </Typography>
             </Paper>
           </Grid>
@@ -337,9 +297,7 @@ export default function AnnkutSevakList() {
               <Typography variant="subtitle2" color="text.secondary">
                 ₹1000
               </Typography>
-              <Typography variant="h6">
-                {formTarget?.seva_thousand ?? 0}
-              </Typography>
+              <Typography variant="h6">{num(summary?.seva_thousand)}</Typography>
             </Paper>
           </Grid>
 
@@ -348,15 +306,20 @@ export default function AnnkutSevakList() {
               <Typography variant="subtitle2" color="text.secondary">
                 Other
               </Typography>
-              <Typography variant="h6">
-                {formTarget?.seva_other ?? 0}
-              </Typography>
+              <Typography variant="h6">{num(summary?.seva_other)}</Typography>
             </Paper>
           </Grid>
         </Grid>
 
-        {/* Leader/Admin: Mandals grid */}
-        {isLeader && mode === "mandals" && (
+        {/* Someone with no mandal in scope reaches this page only by URL. */}
+        {!scoped && !ownMandal && (
+          <Paper sx={{ p: 3, textAlign: "center", color: "text.secondary" }}>
+            You do not manage any mandal, so there is no sevak list to show.
+          </Paper>
+        )}
+
+        {/* Mandal grid */}
+        {scoped && mode === "mandals" && (
           <>
             <Box display="flex" gap={1} mb={2}>
               <TextField
@@ -368,29 +331,30 @@ export default function AnnkutSevakList() {
               />
             </Box>
 
-            {groupedByXetra.length === 0 && (
-              <Paper sx={{ p: 2, textAlign: "center", color: "text.secondary" }}>
+            {groupedByArea.length === 0 && (
+              <Paper
+                sx={{ p: 2, textAlign: "center", color: "text.secondary" }}
+              >
                 {loading ? "Loading mandals…" : "No mandals found"}
               </Paper>
             )}
 
-            {groupedByXetra.map(([xetra, rows]) => (
-              <Box key={xetra || "no-xetra"} mb={3}>
+            {groupedByArea.map(([area, rows]) => (
+              <Box key={area || "no-area"} mb={3}>
                 <Typography
                   variant="subtitle1"
                   sx={{ fontWeight: 700, mb: 1, textAlign: "center" }}
                 >
-                  {xetra || "(No Xetra)"}
+                  {area || "(No Xetra)"}
                 </Typography>
 
                 <Grid container spacing={2}>
-                  {rows.map((m, i) => {
-                    const name = m?.name || m?.mandal_name || "Mandal";
-                    const sanchalak = m?.sanchalak_name || "";
-                    const target = m?.mandal_target || 0;
-                    const filled_form = m?.mandal_filled_form || 0;
+                  {rows.map((m) => {
+                    const name = m?.name || "Mandal";
+                    const target = num(m?.target_forms);
+                    const filled = num(m?.filled_forms);
                     return (
-                      <Grid item xs={12} sm={6} md={4} lg={3} key={`${name}-${i}`}>
+                      <Grid item xs={12} sm={6} md={4} lg={3} key={m?.id}>
                         <Card
                           variant="outlined"
                           onClick={() => handleMandalCardClick(m)}
@@ -402,27 +366,32 @@ export default function AnnkutSevakList() {
                           }}
                         >
                           <CardContent>
-                            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                            <Typography
+                              variant="subtitle1"
+                              sx={{ fontWeight: 700 }}
+                            >
                               {name}
                             </Typography>
                             <Typography variant="body2" color="text.secondary">
-                              {xetra || "—"}
+                              {m?.area_code || "—"}
                             </Typography>
-                            {sanchalak && (
-                              <Box mt={1}>
-                                <Chip size="small" label={`Sanchalak: ${sanchalak}`} />
-                              </Box>
-                            )}
-                            {target && (
-                              <Box mt={1}>
-                                <Chip size="small" label={`Target: ${target}`} />
-                              </Box>
-                            )}
-                            {filled_form && (
-                              <Box mt={1}>
-                                <Chip size="small" label={`Filled Form: ${filled_form}`} />
-                              </Box>
-                            )}
+
+                            <Box
+                              mt={1}
+                              display="flex"
+                              gap={0.5}
+                              flexWrap="wrap"
+                            >
+                              <Chip size="small" label={`Target: ${target}`} />
+                              <Chip size="small" label={`Filled: ${filled}`} />
+                              <Chip
+                                size="small"
+                                variant="outlined"
+                                label={`${num(m?.sevaks)} sevaks · ${num(
+                                  m?.parivars
+                                )} parivars`}
+                              />
+                            </Box>
                           </CardContent>
                         </Card>
                       </Grid>
@@ -431,12 +400,19 @@ export default function AnnkutSevakList() {
                 </Grid>
 
                 <Box mt={1}>
-                  <Paper sx={{ p: 1.5, display: "flex", gap: 3, justifyContent: "center" }}>
+                  <Paper
+                    sx={{
+                      p: 1.5,
+                      display: "flex",
+                      gap: 3,
+                      justifyContent: "center",
+                    }}
+                  >
                     <Typography variant="body2" sx={{ fontStyle: "italic" }}>
-                      Subtotal Filled: {sum(rows, "mandal_filled_form")}
+                      Subtotal Filled: {sum(rows, "filled_forms")}
                     </Typography>
                     <Typography variant="body2" sx={{ fontStyle: "italic" }}>
-                      Subtotal Target: {sum(rows, "mandal_target")}
+                      Subtotal Target: {sum(rows, "target_forms")}
                     </Typography>
                   </Paper>
                 </Box>
@@ -445,12 +421,17 @@ export default function AnnkutSevakList() {
           </>
         )}
 
-        {/* Sevaks table */}
-        {mode === "sevaks" && (
+        {/* Sevak table */}
+        {mode === "sevaks" && (scoped || ownMandal) && (
           <>
-            <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+            <Box
+              display="flex"
+              alignItems="center"
+              justifyContent="space-between"
+              mb={1}
+            >
               <Box display="flex" alignItems="center" gap={1}>
-                {isLeader && (
+                {scoped && (
                   <Button
                     variant="outlined"
                     onClick={handleBackToMandals}
@@ -459,14 +440,17 @@ export default function AnnkutSevakList() {
                     Back to mandals
                   </Button>
                 )}
-                {selectedMandal && (
-                  <Chip variant="outlined" label={`Mandal: ${selectedMandal}`} />
+                {selectedMandal?.name && (
+                  <Chip
+                    variant="outlined"
+                    label={`Mandal: ${selectedMandal.name}`}
+                  />
                 )}
               </Box>
 
               <TextField
                 size="small"
-                placeholder="Search sevaks by name, id, phone…"
+                placeholder="Search sevaks by name, id, mobile…"
                 value={qSevak}
                 onChange={(e) => setQSevak(e.target.value)}
                 sx={{ width: 360 }}
@@ -485,34 +469,48 @@ export default function AnnkutSevakList() {
                   <TableRow>
                     <TableCell>Sevak Id</TableCell>
                     <TableCell>Name</TableCell>
+                    <TableCell>Parivar</TableCell>
+                    <TableCell>Pankh</TableCell>
                     <TableCell>Mandal</TableCell>
                     <TableCell>Form Filled</TableCell>
                     <TableCell>Target</TableCell>
-                    <TableCell>Previous Target</TableCell>
-                    <TableCell>Phone</TableCell>
-                    {(isSanchalak || isAdmin) && <TableCell>Actions</TableCell>}
+                    <TableCell>Mobile</TableCell>
+                    {showActions && <TableCell>Actions</TableCell>}
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {(filteredSevaks || []).map((row, idx) => (
-                    <TableRow key={row?.id || row?.sevak_id || idx} hover>
-                      <TableCell>{row?.sevak_id ?? "-"}</TableCell>
-                      <TableCell>{row?.name ?? "-"}</TableCell>
+                  {(filteredSevaks || []).map((row) => (
+                    <TableRow key={row?.id} hover>
+                      <TableCell>{row?.sevak_code ?? "-"}</TableCell>
+                      <TableCell>{row?.full_name ?? "-"}</TableCell>
+                      <TableCell>{row?.parivar_code ?? "-"}</TableCell>
+                      {/* 12 sevaks have no pankh; the source value was ambiguous */}
+                      <TableCell>{row?.pankh_label ?? "—"}</TableCell>
                       <TableCell>{row?.mandal_name ?? "-"}</TableCell>
-                      <TableCell>{row?.filled_form ?? 0}</TableCell>
-                      <TableCell>{row?.sevak_target ?? 0}</TableCell>
-                      <TableCell>{row?.previous_target ?? 0}</TableCell>
-                      <TableCell>{row?.phone_number ?? "-"}</TableCell>
-                      {(isSanchalak || isAdmin) && (
+                      <TableCell>{num(row?.filled_forms)}</TableCell>
+                      <TableCell>{num(row?.target_forms)}</TableCell>
+                      <TableCell>{row?.mobile ?? "-"}</TableCell>
+                      {showActions && (
                         <TableCell>
-                          <IconButton color="warning" onClick={() => handleEdit(row)} sx={{ mr: 1 }}>
-                            <i className="bi fs-6 bi-pencil"></i>
-                          </IconButton>
-                          {/* Optional:
-                          <IconButton color="error" onClick={() => handleDeletePrompt(row?.sevak_id)}>
-                            <i className="bi fs-6 bi-trash"></i>
-                          </IconButton>
-                          */}
+                          {mayEdit && (
+                            <IconButton
+                              color="warning"
+                              onClick={() => handleEdit(row)}
+                              sx={{ mr: 1 }}
+                              title="Edit"
+                            >
+                              <i className="bi fs-6 bi-pencil"></i>
+                            </IconButton>
+                          )}
+                          {mayDeactivate && (
+                            <IconButton
+                              color="error"
+                              onClick={() => handleDeactivatePrompt(row)}
+                              title="Deactivate"
+                            >
+                              <i className="bi fs-6 bi-person-x"></i>
+                            </IconButton>
+                          )}
                         </TableCell>
                       )}
                     </TableRow>
@@ -520,7 +518,11 @@ export default function AnnkutSevakList() {
 
                   {filteredSevaks?.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={7} align="center" sx={{ py: 4, color: "text.secondary" }}>
+                      <TableCell
+                        colSpan={showActions ? 9 : 8}
+                        align="center"
+                        sx={{ py: 4, color: "text.secondary" }}
+                      >
                         {loading ? "Loading sevaks…" : "No sevaks found"}
                       </TableCell>
                     </TableRow>
@@ -532,25 +534,43 @@ export default function AnnkutSevakList() {
         )}
       </Box>
 
-      {/* Delete confirmation (optional) */}
-      <Dialog open={openConfirmDialog} onClose={() => setOpenConfirmDialog(false)}>
-        <DialogTitle>Confirm Deletion</DialogTitle>
+      {/* Deactivation confirmation */}
+      <Dialog
+        open={openConfirmDialog}
+        onClose={() => setOpenConfirmDialog(false)}
+      >
+        <DialogTitle>Deactivate {itemToDeactivate?.full_name}</DialogTitle>
         <DialogContent>
-          <p>Are you sure you want to delete this item?</p>
+          <p>
+            This hides the sevak from lists and takes away their login. Nothing
+            is deleted — the receipts they collected keep pointing at them.
+          </p>
         </DialogContent>
         <DialogActions>
-          <Button variant="contained" onClick={() => setOpenConfirmDialog(false)} color="primary">
+          <Button
+            variant="contained"
+            onClick={() => setOpenConfirmDialog(false)}
+            color="primary"
+          >
             Cancel
           </Button>
-          <Button variant="contained" onClick={handleConfirmDelete} color="secondary">
-            Delete
+          <Button
+            variant="contained"
+            onClick={handleConfirmDeactivate}
+            color="error"
+          >
+            Deactivate
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* Modals */}
-      {showAddAnnkutSevak && (
-        <AddAnnkutSevakModal modal={showAddAnnkutSevak} setModal={setShowAddAnnkutSevak} />
+      {showAddAnnkutSevak && addTargetMandal && (
+        <AddAnnkutSevakModal
+          modal={showAddAnnkutSevak}
+          setModal={setShowAddAnnkutSevak}
+          mandal={addTargetMandal}
+          refreshData={() => fetchSevaks(addTargetMandal.id)}
+        />
       )}
 
       {editModal && (
@@ -558,14 +578,17 @@ export default function AnnkutSevakList() {
           modal={editModal}
           setModal={setEditModal}
           sevakData={selectedSevakRow}
-          sevak_id={sevakId}
-          refreshData={() =>
-            isLeader && selectedMandal
-              ? fetchSevaksForScope({ mandalName: selectedMandal })
-              : fetchSevaksForScope()
-          }
+          refreshData={() => fetchSevaks(selectedMandal?.id)}
         />
       )}
+
+      <ToastContainer
+        position="top-center"
+        autoClose={5000}
+        closeOnClick
+        pauseOnHover
+        theme="colored"
+      />
     </>
   );
 }

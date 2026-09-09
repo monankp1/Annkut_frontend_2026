@@ -1,6 +1,5 @@
 // src/pages/ReceiptBooks.jsx
 import React from "react";
-import axios from "axios";
 import {
   Box,
   Button,
@@ -14,162 +13,108 @@ import {
   DialogContent,
   DialogActions,
 } from "@mui/material";
+import { toast, ToastContainer } from "react-toastify";
 import Header from "../components/Header";
-import { BACKEND_ENDPOINT } from "../api/api";
+import api, { num, errorText } from "../api/annkut";
+import { getSevak, hasMandalScope } from "../api/session";
 
-// Presentational
 import MandalGrid from "../components/receipt-books/MandalGrid";
 import BookTable from "../components/receipt-books/BookTable";
 
-// Modals
 import AssignBookModal from "../components/receipt-books/AssignBookModal";
 import DeassignBookModal from "../components/receipt-books/DeassignBookModal";
 import AddBookModal from "../components/receipt-books/AddBookModal";
 import EditBookModal from "../components/receipt-books/EditBookModal";
 
 export default function ReceiptBooks() {
-  const sevak = JSON.parse(localStorage.getItem("sevakDetails")) || {};
-  const role = sevak?.role_code || "";
+  const me = getSevak();
+  const scoped = hasMandalScope(me);
+  const ownMandal = me?.mandal || null;
 
-  // Be tolerant to different storage shapes
-  const sevakCode =
-    sevak?.sevak_code ||
-    sevak?.sevak_id ||
-    sevak?.sevakId ||
-    "";
-
-  const isAdmin = role === "ADMIN";
-  const isSanchalak = role === "SANCHALAK";
-  const user_mandal = sevak?.mandal_name || "";
-  // console.log(role);
-  // ---------- state ----------
+  // Everything is addressed by mandal_id: a mandal code like "NK" is unique
+  // only inside its xetra, so the name alone is never enough.
   const [mandals, setMandals] = React.useState([]);
   const [books, setBooks] = React.useState([]);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState("");
 
-  // UI mode
-  const [mode, setMode] = React.useState(isAdmin ? "mandals" : "books");
+  // Someone holding several mandals picks one first; everyone else goes
+  // straight to their own.
+  const multiMandal = scoped;
+  const [mode, setMode] = React.useState(multiMandal ? "mandals" : "books");
+  const [selectedMandal, setSelectedMandal] = React.useState(
+    multiMandal ? null : ownMandal
+  );
 
-  // selected mandal (for Admin)
-  const [selectedMandal, setSelectedMandal] = React.useState("");
-  const [selectedMandalKey, setSelectedMandalKey] = React.useState("");
-
-  // search
   const [qBooks, setQBooks] = React.useState("");
   const [qMandal, setQMandal] = React.useState("");
 
-  // Assign modal
   const [assignOpen, setAssignOpen] = React.useState(false);
-  const [assignBookNo, setAssignBookNo] = React.useState(null);
-  const [deassignInitialLastUsed, setDeassignInitialLastUsed] = React.useState("");
-  const [deassignEndNo, setDeassignEndNo] = React.useState(50);
-  const [deassignReadOnly, setDeassignReadOnly] = React.useState(false);
+  const [assignBook, setAssignBook] = React.useState(null);
 
-  // Deassign modal
   const [deassignOpen, setDeassignOpen] = React.useState(false);
-  const [deassignBookNo, setDeassignBookNo] = React.useState(null);
+  const [deassignBook, setDeassignBook] = React.useState(null);
 
-  // Edit modal (Admin)
   const [editOpen, setEditOpen] = React.useState(false);
   const [editingBook, setEditingBook] = React.useState(null);
 
-  // Delete confirm (Admin)
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [deletingBook, setDeletingBook] = React.useState(null);
   const [deleteSubmitting, setDeleteSubmitting] = React.useState(false);
 
-  // Add Book modal
   const [addOpen, setAddOpen] = React.useState(false);
 
-  // ---------- helpers ----------
-  const norm = (s) => String(s || "").trim().toLowerCase();
-  const safe = (s) => String(s || "").trim();
-
-  const activeMandal = React.useMemo(
-    () => safe(selectedMandal || user_mandal),
-    [selectedMandal, user_mandal]
-  );
+  const activeMandal = selectedMandal;
 
   // ---------- fetchers ----------
+
   const fetchMandals = React.useCallback(async () => {
+    setLoading(true);
     try {
-      const res = await axios.post(`${BACKEND_ENDPOINT}sevak/get_mandal_list`, {
-        sevak_id: sevak?.sevak_id, // this endpoint expects sevak_id
-      });
-      const arr =
-        res?.data?.mandal_array ||
-        res?.data?.mandals ||
-        res?.data?.data ||
-        [];
+      const res = await api.mandals({});
+      const arr = res?.mandal_array;
       setMandals(Array.isArray(arr) ? arr : []);
     } catch (e) {
       console.error("Fetch mandals error:", e);
       setMandals([]);
+      setError(errorText(e, "Failed to load mandals."));
+    } finally {
+      setLoading(false);
     }
-  }, [sevak?.sevak_id]);
+  }, []);
 
-  const fetchBooksServer = React.useCallback(
-    async ({ mandal, code } = {}) => {
-      setError("");
-      setLoading(true);
-      try {
-        const payload = {
-          // permissions are checked against the actor; always use the logged-in user
-          sevak_code: code || sevakCode,
-        };
-        if (mandal) payload.mandal = mandal;
-
-        const res = await axios.post(`${BACKEND_ENDPOINT}ReceiptBooks/list`, payload);
-
-        // accept either shape from backend
-        const rows =
-          (Array.isArray(res?.data?.all_books) && res.data.all_books) ||
-          (Array.isArray(res?.data?.books) && res.data.books) ||
-          [];
-
-        // Helpful logs (leave them for now)
-        console.log("[LIST] payload:", payload);
-        console.log("[LIST] response:", res?.data);
-        console.log("[LIST] rows:", rows);
-
-        setBooks(rows);
-      } catch (e) {
-        console.error("Fetch books error:", e);
-        const msg = e?.response?.data?.message || "Failed to load books.";
-        setError(msg);
-        setBooks([]);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [sevakCode]
-  );
-
-  // initial load flows
-  React.useEffect(() => {
-    if (isAdmin) fetchMandals();
-    if (isSanchalak) {
-      setMode("books");
-      setQBooks(""); // ensure search doesn't hide results
-      fetchBooksServer({ code: sevakCode }); // mandal is derived server-side
+  const fetchBooks = React.useCallback(async (mandalId) => {
+    setError("");
+    setLoading(true);
+    try {
+      // With no mandal_id the server falls back to the caller's own mandal,
+      // and answers 400 for someone attached to none.
+      const rows = await api.books(mandalId || undefined);
+      setBooks(Array.isArray(rows) ? rows : []);
+    } catch (e) {
+      console.error("Fetch books error:", e);
+      setError(errorText(e, "Failed to load books."));
+      setBooks([]);
+    } finally {
+      setLoading(false);
     }
-  }, [isAdmin, isSanchalak, sevakCode, fetchMandals, fetchBooksServer]);
+  }, []);
 
-  // whenever we land on "books", (re)fetch for current context
   React.useEffect(() => {
-    if (mode !== "books") return;
-    if (isAdmin && !selectedMandal) return; // admin needs to pick a mandal first
-    setQBooks(""); // clear search so results aren't filtered out
-    fetchBooksServer({ mandal: selectedMandal || undefined, code: sevakCode });
-  }, [mode, selectedMandal, isAdmin, sevakCode, fetchBooksServer]);
+    if (multiMandal) fetchMandals();
+    else fetchBooks(ownMandal?.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ---------- derived ----------
+
   const filteredMandals = React.useMemo(() => {
     const needle = qMandal.trim().toLowerCase();
     if (!needle) return mandals;
     return (mandals || []).filter((m) =>
-      JSON.stringify(m || {}).toLowerCase().includes(needle)
+      JSON.stringify(m || {})
+        .toLowerCase()
+        .includes(needle)
     );
   }, [mandals, qMandal]);
 
@@ -177,37 +122,34 @@ export default function ReceiptBooks() {
     const needle = qBooks.trim().toLowerCase();
     if (!needle) return books;
     return (books || []).filter((b) =>
-      JSON.stringify(b || {}).toLowerCase().includes(needle)
+      JSON.stringify(b || {})
+        .toLowerCase()
+        .includes(needle)
     );
   }, [books, qBooks]);
 
-  // ---------- page handlers ----------
+  // ---------- handlers ----------
+
   const handleCardClick = async (m) => {
-    const mandalName = m?.name || m?.mandal_name || "";
-    console.log("[Mandal click]", mandalName, m);
-    setSelectedMandal(safe(mandalName));
-    setSelectedMandalKey(norm(mandalName));
-    setQBooks(""); // clear search
-    setMode("books"); // books effect above will fetch
+    const picked = { id: num(m?.id), name: m?.name || "" };
+    setSelectedMandal(picked);
+    setQBooks("");
+    setMode("books");
+    await fetchBooks(picked.id);
   };
 
   const handleBackToMandals = () => {
-    setSelectedMandal("");
-    setSelectedMandalKey("");
+    setSelectedMandal(null);
     setQBooks("");
     setBooks([]);
     setMode("mandals");
   };
 
   const refresh = () => {
-    if (mode === "mandals" && isAdmin) {
-      fetchMandals();
-    } else if (mode === "books") {
-      fetchBooksServer({ mandal: selectedMandal || undefined, code: sevakCode });
-    }
+    if (mode === "mandals" && multiMandal) fetchMandals();
+    else fetchBooks(activeMandal?.id);
   };
 
-  // Admin: open edit/delete
   const openEditModal = (row) => {
     setEditingBook(row);
     setEditOpen(true);
@@ -227,162 +169,111 @@ export default function ReceiptBooks() {
   };
 
   const doDeleteBook = async () => {
-    if (!deletingBook?.book_no) return;
+    if (!deletingBook?.id) return;
     try {
       setDeleteSubmitting(true);
-      await axios.post(`${BACKEND_ENDPOINT}ReceiptBooks/delete`, {
-        sevak_code: sevakCode,
-        book_no: Number(deletingBook.book_no),
-      });
+      const res = await api.deleteBook(num(deletingBook.id));
+      toast.success(res?.message || "Receipt book deleted.");
       closeDeleteConfirm();
-      await fetchBooksServer({ mandal: activeMandal, code: sevakCode });
+      await fetchBooks(activeMandal?.id);
     } catch (e) {
-      const msg = e?.response?.data?.message || e?.message || "Failed to delete book.";
-      alert(msg);
+      // 409 when the book is issued or already holds receipts.
+      toast.error(errorText(e, "Failed to delete book."));
     } finally {
       setDeleteSubmitting(false);
     }
   };
 
-  // row helpers
-  const ownerChip = (row) => {
-    const isSubmitted =
-      (typeof row?.status === "string" && row.status.toLowerCase() === "submitted") ||
-      !!row?.submitted_at;
-
-    if (isSubmitted) {
-      return <Chip size="small" label="Submitted" variant="outlined" />;
-    }
-
-    const userName = row?.issued_to_name;
-    const mandalName = row?.mandal_name;
-
-    if (userName) return <Chip size="small" label={`Sevak: ${userName}`} color="primary" />;
-    if (mandalName) return <Chip size="small" label={`Mandal: ${mandalName}`} color="success" />;
-    return <Chip size="small" label="Unassigned" variant="outlined" />;
-  };
-
-  const TOTAL_PER_BOOK = 50;
-
- const deriveInitialLastUsed = (row) => {
-  const last = Number(row?.last_used_no || 0);
-  const next = Number(row?.next_receipt_no || 0);
-  const end  = Number(row?.end_no || 50);
-
-  let guess = 0;
-  if (last > 0)       guess = last;     // prefer server's last_used_no
-  else if (next > 1)  guess = next - 1; // else derive from next
-
-  if (guess < 1) guess = 0;             // keep empty if unused
-  if (guess > end) guess = end;         // clamp to end
-  return guess ? String(guess) : "";
-};
-
-  const formatRange = React.useCallback((row) => {
-    // Treat end_no as "last used receipt number" once a book is deassigned.
-    const lastUsed = Number(row?.end_no ?? 0);
-
-    // For Sanchalak view:
-    // - Default: 1–25
-    // - If a lastUsed exists and it's < 25, show "lastUsed – 25"
-    if (isSanchalak) {
-      if (lastUsed > 0 && lastUsed < TOTAL_PER_BOOK) {
-        return `${lastUsed} – ${TOTAL_PER_BOOK}`;
-      }
-      return `1 – ${TOTAL_PER_BOOK}`;
-    }
-
-    // For Admin or other roles, keep the explicit backend range if present.
-    const s = Number(row?.start_no || 1);
-    const e = Number(row?.end_no || TOTAL_PER_BOOK);
-    return `${s} – ${e}`;
-  }, [isSanchalak]);
-
-  // ---------- modals open/close ----------
-  const openAssignModal = async (book_no) => {
-    if (!activeMandal) {
-      alert("No mandal selected/available.");
+  const openAssignModal = (row) => {
+    if (!activeMandal?.id) {
+      toast.error("No mandal selected.");
       return;
     }
-    setAssignBookNo(book_no);
+    setAssignBook(row);
     setAssignOpen(true);
   };
   const closeAssignModal = () => {
     setAssignOpen(false);
-    setAssignBookNo(null);
+    setAssignBook(null);
   };
 
-  const openDeassignModal = (book_no) => {
-    setDeassignBookNo(book_no);
-
-    const row = (books || []).find(b => String(b?.book_no) === String(book_no));
-    if (row) {
-      const lastUsed = row?.last_used_no !== null ? String(row.last_used_no) : "0";
-      setDeassignInitialLastUsed(lastUsed);
-      setDeassignEndNo(Number(row?.end_no || 50));
-      setDeassignReadOnly(row?.last_used_no !== null); // make readonly if already exists
-    } else {
-      setDeassignInitialLastUsed("0");
-      setDeassignEndNo(50);
-      setDeassignReadOnly(false);
-    }
-
+  const openDeassignModal = (row) => {
+    setDeassignBook(row);
     setDeassignOpen(true);
   };
   const closeDeassignModal = () => {
     setDeassignOpen(false);
-    setDeassignBookNo(null);
+    setDeassignBook(null);
   };
 
   const openAddModal = () => {
-    if (!activeMandal) {
-      alert("Select a mandal first.");
+    if (!activeMandal?.id) {
+      toast.error("Select a mandal first.");
       return;
     }
     setAddOpen(true);
   };
-  const closeAddModal = () => setAddOpen(false);
 
-  // mark a book as submitted (Sanchalak action)
   const submitMarkSubmitted = React.useCallback(
-    async (book_no) => {
-      if (!book_no) return;
-      if (!window.confirm(`Mark book ${book_no} as submitted?`)) return;
+    async (row) => {
+      if (!row?.id) return;
+      if (!window.confirm(`Mark book ${row.book_no} as submitted?`)) return;
 
       try {
         setLoading(true);
         setError("");
-
-        await axios.post(`${BACKEND_ENDPOINT}ReceiptBooks/submit`, {
-          sevak_code: sevakCode,
-          book_no: Number(book_no),
-        });
-
-        await fetchBooksServer({ mandal: activeMandal, code: sevakCode });
+        const res = await api.submitBook(num(row.id));
+        toast.success(res?.message || "Receipt book marked as submitted.");
+        await fetchBooks(activeMandal?.id);
       } catch (e) {
         console.error("Submit error:", e);
-        const msg = e?.response?.data?.message || e?.message || "Failed to submit book.";
-        setError(msg);
-        alert(msg);
+        toast.error(errorText(e, "Failed to submit book."));
       } finally {
         setLoading(false);
       }
     },
-    [sevakCode, activeMandal, fetchBooksServer]
+    [activeMandal, fetchBooks]
   );
 
+  // A book is held by a parivar, not by one person: it stays in the house and
+  // whoever is around writes in it.
+  const ownerChip = (row) => {
+    const status = String(row?.status || "").toUpperCase();
+
+    if (status === "SUBMITTED" || row?.submitted_at) {
+      return <Chip size="small" label="Submitted" variant="outlined" />;
+    }
+
+    if (row?.parivar_id) {
+      return (
+        <Chip
+          size="small"
+          color="primary"
+          label={`Parivar: ${row.parivar_code || row.parivar_id}`}
+        />
+      );
+    }
+
+    return <Chip size="small" label="Available" variant="outlined" />;
+  };
+
   // ---------- render ----------
+
   return (
     <>
       <Header />
 
       <Box p={2}>
-        <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
+        <Box
+          display="flex"
+          alignItems="center"
+          justifyContent="space-between"
+          mb={2}
+        >
           <Typography variant="h5">Receipt Books</Typography>
 
           <Box display="flex" alignItems="center" gap={1}>
-            {/* Admin-only add book when inside a mandal */}
-            {isAdmin && mode === "books" && activeMandal && (
+            {mode === "books" && activeMandal?.id && (
               <Button variant="contained" onClick={openAddModal}>
                 Add Book
               </Button>
@@ -396,8 +287,14 @@ export default function ReceiptBooks() {
           </Box>
         </Box>
 
-        {/* ADMIN: mandal cards */}
-        {isAdmin && mode === "mandals" && (
+        {!scoped && !ownMandal && (
+          <Box mb={2} color="text.secondary">
+            Your account is not attached to a mandal, so there are no books to
+            manage here.
+          </Box>
+        )}
+
+        {multiMandal && mode === "mandals" && (
           <>
             <Box display="flex" gap={1} mb={2}>
               <TextField
@@ -409,7 +306,6 @@ export default function ReceiptBooks() {
               />
             </Box>
 
-            {/* Make sure MandalGrid calls the SAME prop name: onClickMandal(mandalObj) */}
             <MandalGrid
               mandals={filteredMandals}
               loading={loading}
@@ -418,12 +314,16 @@ export default function ReceiptBooks() {
           </>
         )}
 
-        {/* BOOKS: table */}
         {mode === "books" && (
           <>
-            <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+            <Box
+              display="flex"
+              alignItems="center"
+              justifyContent="space-between"
+              mb={1}
+            >
               <Box display="flex" alignItems="center" gap={1}>
-                {isAdmin && (
+                {multiMandal && (
                   <Button
                     variant="outlined"
                     onClick={handleBackToMandals}
@@ -432,7 +332,12 @@ export default function ReceiptBooks() {
                     Back to mandals
                   </Button>
                 )}
-                {activeMandal && <Chip variant="outlined" label={`Mandal: ${activeMandal}`} />}
+                {activeMandal?.name && (
+                  <Chip
+                    variant="outlined"
+                    label={`Mandal: ${activeMandal.name}`}
+                  />
+                )}
               </Box>
 
               <TextField
@@ -452,14 +357,11 @@ export default function ReceiptBooks() {
 
             <BookTable
               rows={filteredBooks}
-              isAdmin={isAdmin}
-              isSanchalak={isSanchalak}
               loading={loading}
               ownerChip={ownerChip}
-              formatRange={formatRange}
-              onAssign={(bookNo) => openAssignModal(bookNo)}
-              onDeassign={(bookNo) => openDeassignModal(bookNo)}
-              onSubmitBook={(bookNo) => submitMarkSubmitted(bookNo)}
+              onAssign={openAssignModal}
+              onDeassign={openDeassignModal}
+              onSubmitBook={submitMarkSubmitted}
               onEdit={openEditModal}
               onDelete={openDeleteConfirm}
             />
@@ -467,52 +369,45 @@ export default function ReceiptBooks() {
         )}
       </Box>
 
-      {/* Modals */}
       <AssignBookModal
         open={assignOpen}
         onClose={closeAssignModal}
-        activeMandal={activeMandal}
-        sevakId={sevak?.sevak_id}        // roster fetch needs sevak_id
-        sevakCode={sevakCode}            // assign API needs sevak_code
-        bookNo={assignBookNo}
-        onAssigned={() => fetchBooksServer({ mandal: activeMandal, code: sevakCode })}
+        mandal={activeMandal}
+        book={assignBook}
+        onAssigned={() => fetchBooks(activeMandal?.id)}
       />
 
       <DeassignBookModal
         open={deassignOpen}
         onClose={closeDeassignModal}
-        bookNo={deassignBookNo}
-        sevakCode={sevakCode}
-        onDeassigned={() => fetchBooksServer({ mandal: activeMandal, code: sevakCode })}
-        initialLastUsedNo={deassignInitialLastUsed}
-        endNo={deassignEndNo}
-        readOnly={deassignReadOnly}
+        book={deassignBook}
+        onDeassigned={() => fetchBooks(activeMandal?.id)}
       />
 
       <AddBookModal
         open={addOpen}
-        onClose={closeAddModal}
-        activeMandal={activeMandal}
-        sevakCode={sevakCode}
-        onAdded={() => fetchBooksServer({ mandal: activeMandal, code: sevakCode })}
+        onClose={() => setAddOpen(false)}
+        mandal={activeMandal}
+        onAdded={() => fetchBooks(activeMandal?.id)}
       />
 
       <EditBookModal
         open={editOpen}
         onClose={closeEditModal}
-        sevakCode={sevakCode}
         book={editingBook}
-        onSaved={() => fetchBooksServer({ mandal: activeMandal, code: sevakCode })}
+        onSaved={() => fetchBooks(activeMandal?.id)}
       />
 
-      {/* Delete Confirm (Admin) */}
       <Dialog open={deleteOpen} onClose={closeDeleteConfirm} fullWidth maxWidth="xs">
         <DialogTitle>Delete Book {deletingBook?.book_no}</DialogTitle>
         <DialogContent>
-          This will remove the receipt book record. Are you sure?
+          This removes the receipt book record. A book that is issued, or that
+          already holds receipts, cannot be deleted.
         </DialogContent>
         <DialogActions>
-          <Button onClick={closeDeleteConfirm} color="inherit">Cancel</Button>
+          <Button onClick={closeDeleteConfirm} color="inherit">
+            Cancel
+          </Button>
           <Button
             onClick={doDeleteBook}
             color="error"
@@ -523,6 +418,14 @@ export default function ReceiptBooks() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <ToastContainer
+        position="top-center"
+        autoClose={5000}
+        closeOnClick
+        pauseOnHover
+        theme="colored"
+      />
     </>
   );
 }

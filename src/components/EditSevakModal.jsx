@@ -1,154 +1,202 @@
 // src/components/EditSevakModal.jsx
 import React, { useEffect, useState } from "react";
-import axios from "axios";
 import {
   Button,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Select,
+  Typography,
 } from "@mui/material";
 import TextField from "@mui/material/TextField";
-import { BACKEND_ENDPOINT } from "../api/api";
+import { toast } from "react-toastify";
+import api, { num, errorText } from "../api/annkut";
+import { PANKH_OPTIONS } from "./AddAnnkutSevakModal";
 
 const asStr = (v) => (v === undefined || v === null ? "" : String(v));
-const FIELDS_TO_VALIDATE = ["name", "sevak_target", "phone_number"];
 
-export default function EditSevakModal({ modal, setModal, sevakData = {}, refreshData }) {
+// The name is stored in three parts and the full_name column is rebuilt from
+// them server-side, so it is edited as three fields rather than one.
+export default function EditSevakModal({
+  modal,
+  setModal,
+  sevakData = {},
+  refreshData,
+}) {
   const [formData, setFormData] = useState({
-    name: asStr(sevakData.name),
-    sevak_target: asStr(sevakData.sevak_target),
-    phone_number: asStr(sevakData.phone_number),
+    surname: "",
+    first_name: "",
+    middle_name: "",
+    mobile: "",
+    pankh: "",
+    target_forms: "0",
   });
 
-  const [errors, setErrors] = useState({
-    name: false,
-    sevak_target: false,
-    phone_number: false,
-  });
-
+  const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     setFormData({
-      name: asStr(sevakData.name),
-      sevak_target: asStr(sevakData.sevak_target),
-      phone_number: asStr(sevakData.phone_number),
+      surname: asStr(sevakData.surname),
+      first_name: asStr(sevakData.first_name),
+      middle_name: asStr(sevakData.middle_name),
+      mobile: asStr(sevakData.mobile),
+      // 12 sevaks legitimately have no pankh; "" keeps it unset.
+      pankh: asStr(sevakData.pankh),
+      target_forms: asStr(num(sevakData.target_forms)),
     });
-
-    // Re-validate when incoming data changes
-    setErrors({
-      name: validateField("name", asStr(sevakData.name)),
-      sevak_target: validateField("sevak_target", asStr(sevakData.sevak_target)),
-      phone_number: validateField("phone_number", asStr(sevakData.phone_number)),
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setErrors({});
   }, [sevakData]);
 
   const toggle = () => setModal(!modal);
 
-  const validateField = (name, value) => {
-    const v = asStr(value);
-
-    switch (name) {
-      case "name":
-        return v.trim() === "";
-      case "sevak_target": {
-        // required & non-negative integer (adjust if you need > 0)
-        if (v.trim() === "") return true;
-        if (!/^\d+$/.test(v)) return true;
-        return false;
-      }
-      case "phone_number":
-        // exactly 10 digits (adjust to your format as needed)
-        return !/^\d{10}$/.test(v);
-      default:
-        return false;
+  const validate = (data) => {
+    const next = {};
+    if (!data.first_name.trim()) next.first_name = "First name is required.";
+    if (data.mobile && !/^\d{10}$/.test(data.mobile)) {
+      next.mobile = "Mobile must be exactly 10 digits.";
     }
+    if (!/^\d*$/.test(data.target_forms)) {
+      next.target_forms = "Digits only.";
+    }
+    return next;
   };
-
-  const validateForm = () =>
-    !FIELDS_TO_VALIDATE.some((key) => validateField(key, formData[key]));
 
   const handleChange = (e) => {
     const { name } = e.target;
     let { value } = e.target;
 
-    // sanitize inputs
-    if (name === "phone_number") {
-      value = asStr(value).replace(/\D/g, "").slice(0, 10); // keep up to 10 digits
-    }
-    if (name === "sevak_target") {
-      value = asStr(value).replace(/\D/g, ""); // digits only
-    }
+    if (name === "mobile") value = asStr(value).replace(/\D/g, "").slice(0, 10);
+    if (name === "target_forms") value = asStr(value).replace(/\D/g, "");
 
-    setFormData((prev) => ({ ...prev, [name]: value }));
-    setErrors((prev) => ({ ...prev, [name]: validateField(name, value) }));
+    const next = { ...formData, [name]: value };
+    setFormData(next);
+    setErrors(validate(next));
   };
 
   const handleSubmit = async () => {
-    if (!validateForm()) return;
+    const found = validate(formData);
+    if (Object.keys(found).length > 0) {
+      setErrors(found);
+      return;
+    }
+
     setSubmitting(true);
+
     try {
-      await axios.post(`${BACKEND_ENDPOINT}sevak/edit_sevak`, {
-        // send clean payload (cast numeric where appropriate)
-        name: asStr(formData.name).trim(),
-        sevak_target: Number(formData.sevak_target || 0),
-        phone_number: asStr(formData.phone_number),
-        sevak_id: sevakData.sevak_id, // required by your backend
+      // target_forms goes along with the rest: edit_sevak forwards it to
+      // set_target, which also moves the mandal target by the same delta.
+      const res = await api.editSevak(sevakData.sevak_code, {
+        surname: formData.surname.trim(),
+        first_name: formData.first_name.trim(),
+        middle_name: formData.middle_name.trim(),
+        mobile: formData.mobile,
+        pankh: formData.pankh || null,
+        target_forms: Number(formData.target_forms || 0),
       });
 
+      toast.success(res?.message || "Sevak updated successfully.");
       toggle();
-      if (typeof refreshData === "function") {
-        await refreshData();
-      }
+      if (typeof refreshData === "function") await refreshData();
     } catch (error) {
       console.error("Error editing sevak:", error);
+      toast.error(errorText(error, "Could not update that sevak."));
     } finally {
       setSubmitting(false);
     }
   };
 
+  const invalid = Object.keys(errors).length > 0;
+
   return (
     <Dialog open={modal} onClose={toggle} fullWidth maxWidth="sm">
       <DialogTitle>Edit Sevak Details</DialogTitle>
       <DialogContent>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+          {sevakData?.sevak_code}
+          {sevakData?.mandal_name ? ` · ${sevakData.mandal_name}` : ""}
+          {sevakData?.parivar_code ? ` · Parivar ${sevakData.parivar_code}` : ""}
+        </Typography>
+
         <TextField
           fullWidth
           margin="normal"
-          label="Name"
-          name="name"
-          value={formData.name}
+          label="Surname"
+          name="surname"
+          value={formData.surname}
           onChange={handleChange}
-          error={errors.name}
-          helperText={errors.name ? "Name is required." : ""}
         />
 
         <TextField
           fullWidth
           margin="normal"
-          label="Target for 2025"
-          name="sevak_target"
-          type="text" // use text to keep full control of sanitization
-          inputMode="numeric"
-          value={formData.sevak_target}
+          label="First Name"
+          name="first_name"
+          value={formData.first_name}
           onChange={handleChange}
-          error={errors.sevak_target}
-          helperText={errors.sevak_target ? "Enter a valid target (digits only)." : ""}
+          error={Boolean(errors.first_name)}
+          helperText={errors.first_name || ""}
         />
 
         <TextField
           fullWidth
           margin="normal"
-          label="Phone Number"
-          name="phone_number"
+          label="Father's / Husband's Name"
+          name="middle_name"
+          value={formData.middle_name}
+          onChange={handleChange}
+        />
+
+        <TextField
+          fullWidth
+          margin="normal"
+          label="Mobile"
+          name="mobile"
           type="text"
           inputMode="numeric"
-          value={formData.phone_number}
+          value={formData.mobile}
           onChange={handleChange}
-          error={errors.phone_number}
+          error={Boolean(errors.mobile)}
+          helperText={errors.mobile || ""}
+        />
+
+        <FormControl fullWidth margin="normal" size="small">
+          <InputLabel id="edit-pankh-label">Pankh</InputLabel>
+          <Select
+            labelId="edit-pankh-label"
+            label="Pankh"
+            name="pankh"
+            value={formData.pankh}
+            onChange={handleChange}
+          >
+            <MenuItem value="">
+              <em>Not set</em>
+            </MenuItem>
+            {PANKH_OPTIONS.map((p) => (
+              <MenuItem key={p.code} value={p.code}>
+                {p.label}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+
+        <TextField
+          fullWidth
+          margin="normal"
+          label="Target"
+          name="target_forms"
+          type="text"
+          inputMode="numeric"
+          value={formData.target_forms}
+          onChange={handleChange}
+          error={Boolean(errors.target_forms)}
           helperText={
-            errors.phone_number ? "Phone number must be exactly 10 digits." : ""
+            errors.target_forms ||
+            "Also moves the mandal target by the same amount."
           }
         />
       </DialogContent>
@@ -157,11 +205,16 @@ export default function EditSevakModal({ modal, setModal, sevakData = {}, refres
           variant="contained"
           color="secondary"
           onClick={handleSubmit}
-          disabled={!validateForm() || submitting}
+          disabled={invalid || submitting}
         >
           {submitting ? "Saving..." : "Save Changes"}
         </Button>
-        <Button variant="contained" color="error" onClick={toggle} disabled={submitting}>
+        <Button
+          variant="contained"
+          color="error"
+          onClick={toggle}
+          disabled={submitting}
+        >
           Cancel
         </Button>
       </DialogActions>

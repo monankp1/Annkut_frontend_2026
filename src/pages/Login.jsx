@@ -2,10 +2,10 @@ import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
-import axios from "axios";
-import { BACKEND_ENDPOINT } from "../api/api";
-import Mandir from './../resources/mandir.png';
-import bapsLogo from './../resources/logoBaps.png';
+import api, { errorText } from "../api/annkut";
+import { hasMandalScope } from "../api/session";
+import Mandir from "./../resources/mandir.png";
+import bapsLogo from "./../resources/logoBaps.png";
 
 const Login = () => {
   const [loader, setLoader] = useState(false);
@@ -23,29 +23,29 @@ const Login = () => {
   };
 
   const handleSubmit = async (e) => {
-    setLoader(true);
     e.preventDefault();
+    setLoader(true);
+
     try {
-      const res = await axios.post(`${BACKEND_ENDPOINT}login/login`, loginData);
-      console.log(res);
-      if (res.data.status === true) {
-        const { sevak } = res.data;
-        localStorage.setItem("sevakDetails", JSON.stringify(sevak));
+      const sevak = await api.login(
+        loginData.sevak_id.trim(),
+        loginData.password
+      );
 
-        toast.success(res.data.message);
+      toast.success("Login successful");
 
-        if(res.data.sevak.role !== 'Sant Nirdeshak' && res.data.sevak.role !== 'Admin')
-        {
-          navigate("/home");
-        }
-        else{
-          navigate("/annkut-sevak-list");
-        }
-      } else {
-        toast.error("Login Failed: " + res.data.message);
+      // Everyone was seeded with the same password; that has to go before
+      // anything else is reachable.
+      if (sevak?.must_change_password) {
+        navigate("/change-password");
+        return;
       }
+
+      // Leadership lands on the mandal overview, everyone else on their own
+      // seva entry screen.
+      navigate(hasMandalScope(sevak) ? "/annkut-sevak-list" : "/home");
     } catch (error) {
-      toast.error("An error occurred: " + error.message);
+      toast.error(errorText(error, "Login failed."));
     } finally {
       setLoader(false);
     }
@@ -68,6 +68,7 @@ const Login = () => {
             name="sevak_id"
             onChange={handleChange}
             value={loginData.sevak_id}
+            autoCapitalize="characters"
             required
           />
           <label>Password:</label>
@@ -78,19 +79,20 @@ const Login = () => {
             value={loginData.password}
             required
           />
-          <button
-            type="submit"
-            disabled={loader}
-            className="login-btn"
-          >
+          <button type="submit" disabled={loader} className="login-btn">
             {loader ? "Loading..." : "Log In"}
           </button>
 
+          {/* For somebody locked out entirely: the reset behind this link
+              asks for the Sevak ID and registered phone instead of the old
+              password. Someone who can still sign in changes theirs from the
+              menu, which asks for the current one. */}
           <p className="change-password-link">
-            <Link to="/change-password" className="link">
+            <Link to="/forgot-password" className="link">
               Change Password
             </Link>
           </p>
+
           <ToastContainer
             position="top-center"
             autoClose={5000}

@@ -1,15 +1,33 @@
 import React, { useState, useMemo } from "react";
 import { Table } from "reactstrap";
-import { IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Button } from "@mui/material";
+import {
+  IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+} from "@mui/material";
 import { FaTrash } from "react-icons/fa";
 import EditSevaModal from "./EditSevaModal";
 
-const ListingTable = ({ data = [], handleDelete, refreshData }) => {
+/**
+ * `canManage` draws the edit and void buttons. Only a karyakar may change a
+ * recorded receipt — the server answers 403 for everyone else, family
+ * included, so an ordinary sevak sees a read-only list of their own entries.
+ */
+const ListingTable = ({
+  data = [],
+  loading = false,
+  canManage = false,
+  handleDelete,
+  refreshData,
+}) => {
   const [editModal, setEditModal] = useState(false);
   const [selectedSeva, setSelectedSeva] = useState(null);
 
   const [openConfirmDialog, setOpenConfirmDialog] = useState(false);
-  const [itemToDelete, setItemToDelete] = useState(null); // will store numeric/string id
+  const [itemToDelete, setItemToDelete] = useState(null);
 
   const list = Array.isArray(data) ? data : [];
   const currency = useMemo(() => new Intl.NumberFormat("en-IN"), []);
@@ -33,6 +51,8 @@ const ListingTable = ({ data = [], handleDelete, refreshData }) => {
     setItemToDelete(null);
   };
 
+  const colSpan = canManage ? 7 : 6;
+
   return (
     <div>
       <Table striped responsive>
@@ -44,7 +64,7 @@ const ListingTable = ({ data = [], handleDelete, refreshData }) => {
             <th>Book no.</th>
             <th>Receipt no.</th>
             <th>Amount</th>
-            {/* <th>Action</th> */}
+            {canManage && <th>Action</th>}
           </tr>
         </thead>
 
@@ -58,43 +78,69 @@ const ListingTable = ({ data = [], handleDelete, refreshData }) => {
                 <td>{item?.sahyogi_number || "-"}</td>
                 <td>{item?.book_no || "-"}</td>
                 <td>{item?.receipt_no || "-"}</td>
-                <td>{item?.seva_amount != null ? currency.format(Number(item.seva_amount)) : "-"}</td>
                 <td>
-                  {/* <IconButton
-                    color="warning"
-                    onClick={() => handleEdit(item)}
-                    sx={{ mr: 1 }}
-                    size="small"
-                    title="Edit"
-                  >
-                    <i className="bi fs-6 bi-pencil" />
-                  </IconButton> */}
-
-                  {/* {typeof handleDelete === "function" && (
-                    <IconButton
-                      color="error"
-                      onClick={() => requestDelete(item)}
-                      size="small"
-                      title="Delete"
-                    >
-                      <FaTrash />
-                    </IconButton>
-                  )} */}
+                  {item?.seva_amount != null
+                    ? currency.format(Number(item.seva_amount))
+                    : "-"}
                 </td>
+                {canManage && (
+                  <td>
+                    <IconButton
+                      color="warning"
+                      onClick={() => handleEdit(item)}
+                      sx={{ mr: 1 }}
+                      size="small"
+                      title="Edit"
+                    >
+                      <i className="bi fs-6 bi-pencil" />
+                    </IconButton>
+
+                    {typeof handleDelete === "function" && (
+                      <IconButton
+                        color="error"
+                        onClick={() => requestDelete(item)}
+                        size="small"
+                        title="Void"
+                      >
+                        <FaTrash />
+                      </IconButton>
+                    )}
+                  </td>
+                )}
               </tr>
             );
           })}
+
+          {list.length === 0 && (
+            <tr>
+              <td
+                colSpan={colSpan}
+                style={{ textAlign: "center", padding: "24px" }}
+              >
+                {loading ? "Loading…" : "No seva entries yet"}
+              </td>
+            </tr>
+          )}
         </tbody>
       </Table>
 
-      {/* Delete confirmation */}
-      <Dialog open={openConfirmDialog} onClose={() => setOpenConfirmDialog(false)}>
+      <Dialog
+        open={openConfirmDialog}
+        onClose={() => setOpenConfirmDialog(false)}
+      >
         <DialogTitle>Confirm Deletion</DialogTitle>
         <DialogContent>
-          <p>Are you sure you want to delete this item?</p>
+          <p>
+            This voids the entry. The receipt number stays used and cannot be
+            issued again.
+          </p>
         </DialogContent>
         <DialogActions>
-          <Button variant="contained" onClick={() => setOpenConfirmDialog(false)} color="primary">
+          <Button
+            variant="contained"
+            onClick={() => setOpenConfirmDialog(false)}
+            color="primary"
+          >
             Cancel
           </Button>
           <Button variant="contained" onClick={confirmDelete} color="secondary">

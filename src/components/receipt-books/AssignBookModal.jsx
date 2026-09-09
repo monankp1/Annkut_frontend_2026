@@ -1,63 +1,83 @@
 import React from "react";
 import {
-  Dialog, DialogTitle, DialogContent, DialogActions,
-  Box, Typography, FormControl, InputLabel, Select, MenuItem, Button, CircularProgress
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Box,
+  Typography,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Button,
+  CircularProgress,
 } from "@mui/material";
-import axios from "axios";
-import { BACKEND_ENDPOINT } from "../../api/api";
+import { toast } from "react-toastify";
+import api, { num, errorText } from "../../api/annkut";
 
-const AssignBookModal = ({ open, onClose, activeMandal, sevakId, sevakCode, bookNo, onAssigned }) => {
+// A book goes to a household, not to one person: naming any member hands it to
+// their whole parivar, and any of them can then write in it. The roster is the
+// mandal's own sevaks, because a book cannot follow anyone into another mandal
+// without its receipts being filed under a mandal that never held it.
+const AssignBookModal = ({ open, onClose, mandal, book, onAssigned }) => {
   const [roster, setRoster] = React.useState([]);
   const [loading, setLoading] = React.useState(false);
   const [err, setErr] = React.useState("");
-  const [selectedKaryakarCode, setSelectedKaryakarCode] = React.useState("");
+  const [selected, setSelected] = React.useState("");
+
+  const mandalId = mandal?.id;
 
   const loadRoster = React.useCallback(async () => {
-    if (!open || !activeMandal) return;
+    if (!open || !mandalId) return;
+
     setLoading(true);
     setErr("");
+    setSelected("");
+
     try {
-      const res = await axios.post(`${BACKEND_ENDPOINT}sevak/get_sevak_by_mandal`, {
-        mandal: activeMandal,
-        sevak_id: sevakId,
-      });
-      let rows = res?.data?.sevak || res?.data?.data || [];
-      if (!Array.isArray(rows)) rows = [];
-      rows.sort((a, b) => (a?.name || "").localeCompare(b?.name || ""));
+      const res = await api.sevaks({ mandal_id: mandalId, limit: 500 });
+      const rows = Array.isArray(res?.sevak) ? res.sevak : [];
+      rows.sort((a, b) => (a?.full_name || "").localeCompare(b?.full_name || ""));
       setRoster(rows);
     } catch (e) {
-      const msg = e?.response?.data?.message || e?.message || "Failed to load karyakar list.";
-      setErr(msg);
+      setErr(errorText(e, "Failed to load the karyakar list."));
+      setRoster([]);
     } finally {
       setLoading(false);
     }
-  }, [open, activeMandal, sevakId]);
+  }, [open, mandalId]);
 
-  React.useEffect(() => { loadRoster(); }, [loadRoster]);
+  React.useEffect(() => {
+    loadRoster();
+  }, [loadRoster]);
 
   const submit = async () => {
-    if (!selectedKaryakarCode) return alert("Please select a karyakar.");
+    if (!selected) {
+      toast.error("Please select a karyakar.");
+      return;
+    }
+
     try {
       setLoading(true);
       setErr("");
-      const res = await axios.post(`${BACKEND_ENDPOINT}ReceiptBooks/assign`, {
-        sevak_code: sevakCode,
-        book_no: Number(bookNo),
-        to_user_id: String(selectedKaryakarCode),
-      });
 
-      // If backend returns next_receipt_no, show it once.
-      const next = res?.data?.next_receipt_no;
-      if (next) {
-        alert(`Assigned. Next receipt to use: ${next}`);
-      }
+      // The server resolves the sevak to their parivar and issues it there.
+      const res = await api.assignBook(num(book?.id), { sevakId: selected });
+
+      toast.success(
+        res?.next_receipt_no
+          ? `Issued. Next receipt to use: ${res.next_receipt_no}`
+          : res?.message || "Receipt book issued."
+      );
 
       onClose?.();
       onAssigned?.();
     } catch (e) {
-      const msg = e?.response?.data?.message || e?.message || "Failed to assign book.";
+      // 409 when the sevak is in another mandal or the book is exhausted.
+      const msg = errorText(e, "Failed to assign book.");
       setErr(msg);
-      alert(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -65,11 +85,15 @@ const AssignBookModal = ({ open, onClose, activeMandal, sevakId, sevakCode, book
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>Assign Book {bookNo} to Karyakar</DialogTitle>
+      <DialogTitle>Assign Book {book?.book_no} to Karyakar</DialogTitle>
       <DialogContent>
         <Box mt={1} mb={2}>
           <Typography variant="body2" color="text.secondary">
-            Mandal: <strong>{activeMandal || "-"}</strong>
+            Mandal: <strong>{mandal?.name || "-"}</strong>
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+            The book goes to the selected karyakar's whole parivar — anyone in
+            the family can write in it.
           </Typography>
         </Box>
 
@@ -85,12 +109,16 @@ const AssignBookModal = ({ open, onClose, activeMandal, sevakId, sevakCode, book
             <Select
               labelId="karyakar-select-label"
               label="Select Karyakar"
-              value={selectedKaryakarCode}
-              onChange={(e) => setSelectedKaryakarCode(e.target.value)}
+              value={selected}
+              onChange={(e) => setSelected(e.target.value)}
             >
+              {roster.length === 0 && (
+                <MenuItem disabled>No sevaks in this mandal</MenuItem>
+              )}
               {roster.map((u) => (
-                <MenuItem key={u?.sevak_code || u?.id} value={u?.sevak_code}>
-                  {u?.name || "(no name)"} {u?.sevak_code ? `— ${u.sevak_code}` : ""}
+                <MenuItem key={u?.id} value={u?.sevak_code}>
+                  {u?.full_name || "(no name)"}
+                  {u?.sevak_code ? ` — ${u.sevak_code}` : ""}
                 </MenuItem>
               ))}
             </Select>
@@ -98,8 +126,12 @@ const AssignBookModal = ({ open, onClose, activeMandal, sevakId, sevakCode, book
         )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} color="error" variant="outlined">Cancel</Button>
-        <Button onClick={submit} variant="contained" disabled={loading || !selectedKaryakarCode}>Assign</Button>
+        <Button onClick={onClose} color="error" variant="outlined">
+          Cancel
+        </Button>
+        <Button onClick={submit} variant="contained" disabled={loading || !selected}>
+          Assign
+        </Button>
       </DialogActions>
     </Dialog>
   );

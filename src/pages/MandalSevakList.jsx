@@ -1,9 +1,7 @@
-import React, { useEffect, useState } from "react";
-import axios from "axios";
+import React, { useCallback, useEffect, useState } from "react";
 import Header from "../components/Header";
 import { Table } from "reactstrap";
-import { BACKEND_ENDPOINT } from "../api/api";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, Navigate } from "react-router-dom";
 import {
   Button,
   Dialog,
@@ -13,67 +11,75 @@ import {
   IconButton,
 } from "@mui/material";
 import ProgressBar from "react-bootstrap/ProgressBar";
-// Removed unused AddAnnkutSevakModal import
+import { toast, ToastContainer } from "react-toastify";
+import api, { num, errorText } from "../api/annkut";
+import { getSevak, canEditSevak, canDeactivateSevak } from "../api/session";
 import EditSevakModal from "../components/EditSevakModal";
 
+// One mandal's sevaks, opened with the mandal row in router state:
+//
+//   navigate("/mandal-sevak-list", { state: { mandal } })
+//
+// The 2025 version keyed off `mandalDetails.sanchalak`, a field the new API no
+// longer returns; a mandal is identified by its id now.
 const MandalSevakList = () => {
-  const sevak = JSON.parse(localStorage.getItem("sevakDetails"));
-  const sevak_id = sevak?.sevak_id;
+  const location = useLocation();
+  const navigate = useNavigate();
 
-  const [filledForms, setFilledForms] = useState([]);
+  const mandal = location.state?.mandal || null;
+  const mandalId = num(mandal?.id);
+
+  const me = getSevak();
+  const mayEdit = canEditSevak(me);
+  const mayDeactivate = canDeactivateSevak(me);
+  const showActions = mayEdit || mayDeactivate;
+
+  const [sevaks, setSevaks] = useState([]);
+  const [loading, setLoading] = useState(false);
+
   const [editModal, setEditModal] = useState(false);
   const [selectedSevak, setSelectedSevak] = useState(null);
 
   const [openConfirmDialog, setOpenConfirmDialog] = useState(false);
-  const [itemToDelete, setItemToDelete] = useState(null); // will store sevak_id string
+  const [itemToDeactivate, setItemToDeactivate] = useState(null);
 
-  const [sahyogiPrasad, setSahyogiPrasad] = useState(0);
-  const [sevakPrasad, setSevakPrasad] = useState(0);
-
-  const location = useLocation();
-  const { mandalDetails } = location.state || {};
-  const navigate = useNavigate();
-
-  const fetchSevakList = async () => {
+  const fetchSevakList = useCallback(async () => {
+    if (!mandalId) return;
+    setLoading(true);
     try {
-      if (!mandalDetails?.sanchalak) return;
-      const res = await axios.post(`${BACKEND_ENDPOINT}sevak/get_sevak`, {
-        sevak_id: mandalDetails.sanchalak,
-      });
-      setFilledForms(res.data.sevak || []);
-      setSahyogiPrasad(res.data.sahyogi_prasad || 0);
-      setSevakPrasad(res.data.sevak_prasad || 0);
+      const res = await api.sevaks({ mandal_id: mandalId });
+      setSevaks(Array.isArray(res?.sevak) ? res.sevak : []);
     } catch (error) {
       console.error("Error fetching sevak list:", error);
+      toast.error(errorText(error, "Could not load the sevak list."));
+    } finally {
+      setLoading(false);
     }
-  };
+  }, [mandalId]);
 
-  const fetchFilledForms = async () => {
-    try {
-      await fetchSevakList();
-    } catch (error) {
-      console.error("Error fetching filled forms:", error);
-    }
-  };
+  useEffect(() => {
+    fetchSevakList();
+  }, [fetchSevakList]);
 
-  const handleDelete = (item) => {
-    // store the sevak_id only; open dialog
-    setItemToDelete(item?.sevak_id || null);
+  const handleDeactivate = (item) => {
+    setItemToDeactivate(item);
     setOpenConfirmDialog(true);
   };
 
-  const handleDeleteConfirm = async () => {
-    if (!itemToDelete) return;
+  const handleDeactivateConfirm = async () => {
+    const code = itemToDeactivate?.sevak_code;
+    if (!code) return;
+
     try {
-      await axios.post(`${BACKEND_ENDPOINT}sevak/delete_sevak`, {
-        sevak_id: itemToDelete,
-      });
-      await fetchFilledForms(); // Refresh the list after deletion
+      const res = await api.deactivateSevak(code);
+      toast.success(res?.message || "Sevak deactivated.");
+      await fetchSevakList();
     } catch (error) {
-      console.error("Error deleting sevak:", error);
+      console.error("Error deactivating sevak:", error);
+      toast.error(errorText(error, "Could not deactivate that sevak."));
     } finally {
       setOpenConfirmDialog(false);
-      setItemToDelete(null);
+      setItemToDeactivate(null);
     }
   };
 
@@ -82,17 +88,14 @@ const MandalSevakList = () => {
     setEditModal(true);
   };
 
-  const progress =
-    mandalDetails?.mandal_target > 0
-      ? ((Number(mandalDetails?.mandal_filled_form ?? 0) /
-          Number(mandalDetails?.mandal_target ?? 0)) *
-          100) || 0
-      : 0;
+  // Reached directly, with nothing to show for.
+  if (!mandal) {
+    return <Navigate to="/annkut-sevak-list" replace />;
+  }
 
-  useEffect(() => {
-    fetchSevakList();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mandalDetails?.sanchalak]);
+  const target = num(mandal?.target_forms);
+  const filled = num(mandal?.filled_forms);
+  const progress = target > 0 ? (filled / target) * 100 : 0;
 
   return (
     <>
@@ -108,7 +111,9 @@ const MandalSevakList = () => {
           }}
         >
           <div style={{ width: "100%", padding: "10px", fontWeight: 600 }}>
-            <h7 style={{ fontWeight: 600 }}>Archived Target</h7>
+            <h6 style={{ fontWeight: 600 }}>
+              {mandal?.name} — Achieved Target
+            </h6>
             <ProgressBar
               className="custom-progress-bar"
               now={Math.max(0, Math.min(100, Math.round(progress)))}
@@ -127,8 +132,8 @@ const MandalSevakList = () => {
           }}
         >
           <div>
-            <h6>Target : {mandalDetails?.mandal_target ?? 0}</h6>
-            <h6>Filled : {mandalDetails?.mandal_filled_form ?? 0}</h6>
+            <h6>Target : {target}</h6>
+            <h6>Filled : {filled}</h6>
           </div>
 
           <div
@@ -147,63 +152,80 @@ const MandalSevakList = () => {
         </div>
 
         <div>
-          <Table striped bordered>
+          <Table striped bordered responsive>
             <thead>
               <tr>
                 <th>Sevak Id</th>
                 <th>Name</th>
-                {/* <th>Mandal</th> */}
+                <th>Pankh</th>
                 <th>Form Filled</th>
                 <th>Target</th>
-                {(sevak?.role === "Sanchalak" || sevak?.role === "Admin") && (
-                  <th>Actions</th>
-                )}
+                <th>Mobile</th>
+                {showActions && <th>Actions</th>}
               </tr>
             </thead>
             <tbody>
-              {(Array.isArray(filledForms) ? filledForms : []).map(
-                (item, index) => (
-                  <tr key={`${item?.sevak_id || "row"}-${index}`}>
-                    <th scope="row">{item?.sevak_id}</th>
-                    <td>{item?.name}</td>
-                    {/* <td>{item?.mandal}</td> */}
-                    <td>{item?.filled_form ?? 0}</td>
-                    <td>{item?.sevak_target ?? 0}</td>
-                    {(sevak?.role === "Sanchalak" || sevak?.role === "Admin") && (
-                      <td>
+              {sevaks.map((item) => (
+                <tr key={item?.id}>
+                  <th scope="row">{item?.sevak_code}</th>
+                  <td>{item?.full_name}</td>
+                  <td>{item?.pankh_label ?? "—"}</td>
+                  <td>{num(item?.filled_forms)}</td>
+                  <td>{num(item?.target_forms)}</td>
+                  <td>{item?.mobile ?? "-"}</td>
+                  {showActions && (
+                    <td>
+                      {mayEdit && (
                         <IconButton
                           color="warning"
                           onClick={() => handleEdit(item)}
                           style={{ marginRight: "10px" }}
                           size="small"
+                          title="Edit"
                         >
                           <i className="bi fs-6 bi-pencil"></i>
                         </IconButton>
+                      )}
+                      {mayDeactivate && (
                         <IconButton
                           color="error"
-                          onClick={() => handleDelete(item)}
+                          onClick={() => handleDeactivate(item)}
                           size="small"
+                          title="Deactivate"
                         >
-                          <i className="bi fs-6 bi-trash"></i>
+                          <i className="bi fs-6 bi-person-x"></i>
                         </IconButton>
-                      </td>
-                    )}
-                  </tr>
-                )
+                      )}
+                    </td>
+                  )}
+                </tr>
+              ))}
+
+              {sevaks.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={showActions ? 7 : 6}
+                    style={{ textAlign: "center", padding: 24 }}
+                  >
+                    {loading ? "Loading…" : "No sevaks found"}
+                  </td>
+                </tr>
               )}
             </tbody>
           </Table>
         </div>
       </div>
 
-      {/* Delete confirmation */}
       <Dialog
         open={openConfirmDialog}
         onClose={() => setOpenConfirmDialog(false)}
       >
-        <DialogTitle>Confirm Deletion</DialogTitle>
+        <DialogTitle>Deactivate {itemToDeactivate?.full_name}</DialogTitle>
         <DialogContent>
-          <p>Are you sure you want to delete this item?</p>
+          <p>
+            This hides the sevak from lists and takes away their login. Nothing
+            is deleted.
+          </p>
         </DialogContent>
         <DialogActions>
           <Button
@@ -213,8 +235,12 @@ const MandalSevakList = () => {
           >
             Cancel
           </Button>
-          <Button variant="contained" onClick={handleDeleteConfirm} color="secondary">
-            Delete
+          <Button
+            variant="contained"
+            onClick={handleDeactivateConfirm}
+            color="error"
+          >
+            Deactivate
           </Button>
         </DialogActions>
       </Dialog>
@@ -224,9 +250,17 @@ const MandalSevakList = () => {
           modal={editModal}
           setModal={setEditModal}
           sevakData={selectedSevak}
-          refreshData={fetchFilledForms}
+          refreshData={fetchSevakList}
         />
       )}
+
+      <ToastContainer
+        position="top-center"
+        autoClose={5000}
+        closeOnClick
+        pauseOnHover
+        theme="colored"
+      />
     </>
   );
 };
