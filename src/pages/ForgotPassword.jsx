@@ -3,6 +3,12 @@ import { useNavigate, Link } from "react-router-dom";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import api, { errorText } from "../api/annkut";
+import {
+  cleanPhone,
+  isCompletePhone,
+  PHONE_ERROR,
+  PHONE_LENGTH,
+} from "../utils/phone";
 
 const MIN_LENGTH = 6;
 
@@ -23,12 +29,17 @@ const ForgotPassword = () => {
     const { name, value } = e.target;
     setForm({
       ...form,
-      [name]: name === "phone_number" ? value.replace(/\D/g, "") : value,
+      [name]: name === "phone_number" ? cleanPhone(value) : value,
     });
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (!isCompletePhone(form.phone_number)) {
+      toast.error(PHONE_ERROR);
+      return;
+    }
 
     if (form.password.length < MIN_LENGTH) {
       toast.error(`Password must be at least ${MIN_LENGTH} characters.`);
@@ -82,7 +93,7 @@ const ForgotPassword = () => {
             onChange={handleChange}
             value={form.phone_number}
             inputMode="numeric"
-            maxLength={10}
+            maxLength={PHONE_LENGTH}
             required
           />
 

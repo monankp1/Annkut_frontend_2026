@@ -5,8 +5,12 @@ import {
   getSevak,
   hasMandalScope,
   canEditSevak,
+  canCreateSevak,
   canDeactivateSevak,
+  canResetPassword,
 } from "../api/session";
+import ResetPasswordModal from "../components/ResetPasswordModal";
+import SevakActionsMenu from "../components/SevakActionsMenu";
 import Header from "../components/Header";
 import AddAnnkutSevakModal from "../components/AddAnnkutSevakModal";
 import EditSevakModal from "../components/EditSevakModal";
@@ -43,11 +47,13 @@ export default function AnnkutSevakList() {
   const scoped = hasMandalScope(me);
   const ownMandal = me?.mandal || null;
 
-  // A mandal sanchalak may correct a sevak's details; only an admin may take
-  // one off the roster.
+  // A sanchalak may correct a sevak's details inside his own mandal; adding
+  // and deactivating stay with the admin.
   const mayEdit = canEditSevak(me);
+  const mayCreate = canCreateSevak(me);
   const mayDeactivate = canDeactivateSevak(me);
-  const showActions = mayEdit || mayDeactivate;
+  const mayResetPassword = canResetPassword(me);
+  const showActions = mayEdit || mayResetPassword || mayDeactivate;
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -74,6 +80,9 @@ export default function AnnkutSevakList() {
 
   const [openConfirmDialog, setOpenConfirmDialog] = useState(false);
   const [itemToDeactivate, setItemToDeactivate] = useState(null);
+
+  const [resetModal, setResetModal] = useState(false);
+  const [sevakToReset, setSevakToReset] = useState(null);
 
   // ---------- fetchers ----------
 
@@ -194,6 +203,11 @@ export default function AnnkutSevakList() {
     setEditModal(true);
   }
 
+  function handleResetPassword(row) {
+    setSevakToReset(row);
+    setResetModal(true);
+  }
+
   function handleDeactivatePrompt(row) {
     setItemToDeactivate(row);
     setOpenConfirmDialog(true);
@@ -237,7 +251,7 @@ export default function AnnkutSevakList() {
           </Typography>
 
           <Box display="flex" alignItems="center" gap={1}>
-            {addTargetMandal && mayEdit && (
+            {addTargetMandal && mayCreate && (
               <Button
                 variant="outlined"
                 onClick={() => setShowAddAnnkutSevak(true)}
@@ -484,7 +498,7 @@ export default function AnnkutSevakList() {
                       <TableCell>{row?.sevak_code ?? "-"}</TableCell>
                       <TableCell>{row?.full_name ?? "-"}</TableCell>
                       <TableCell>{row?.parivar_code ?? "-"}</TableCell>
-                      {/* 12 sevaks have no pankh; the source value was ambiguous */}
+                      {/* 19 sevaks have no pankh; never default it to a guess */}
                       <TableCell>{row?.pankh_label ?? "—"}</TableCell>
                       <TableCell>{row?.mandal_name ?? "-"}</TableCell>
                       <TableCell>{num(row?.filled_forms)}</TableCell>
@@ -492,25 +506,16 @@ export default function AnnkutSevakList() {
                       <TableCell>{row?.mobile ?? "-"}</TableCell>
                       {showActions && (
                         <TableCell>
-                          {mayEdit && (
-                            <IconButton
-                              color="warning"
-                              onClick={() => handleEdit(row)}
-                              sx={{ mr: 1 }}
-                              title="Edit"
-                            >
-                              <i className="bi fs-6 bi-pencil"></i>
-                            </IconButton>
-                          )}
-                          {mayDeactivate && (
-                            <IconButton
-                              color="error"
-                              onClick={() => handleDeactivatePrompt(row)}
-                              title="Deactivate"
-                            >
-                              <i className="bi fs-6 bi-person-x"></i>
-                            </IconButton>
-                          )}
+                          <SevakActionsMenu
+                            sevak={row}
+                            isSelf={row?.sevak_code === me?.sevak_id}
+                            mayEdit={mayEdit}
+                            mayResetPassword={mayResetPassword}
+                            mayDeactivate={mayDeactivate}
+                            onEdit={handleEdit}
+                            onResetPassword={handleResetPassword}
+                            onDeactivate={handleDeactivatePrompt}
+                          />
                         </TableCell>
                       )}
                     </TableRow>
@@ -542,8 +547,8 @@ export default function AnnkutSevakList() {
         <DialogTitle>Deactivate {itemToDeactivate?.full_name}</DialogTitle>
         <DialogContent>
           <p>
-            This hides the sevak from lists and takes away their login. Nothing
-            is deleted — the receipts they collected keep pointing at them.
+            They will not be able to sign in, and will be removed from the
+            mandal list. Seva already recorded is kept.
           </p>
         </DialogContent>
         <DialogActions>
@@ -570,6 +575,18 @@ export default function AnnkutSevakList() {
           setModal={setShowAddAnnkutSevak}
           mandal={addTargetMandal}
           refreshData={() => fetchSevaks(addTargetMandal.id)}
+        />
+      )}
+
+      {/* No refresh on close: a reset changes nothing the table shows. */}
+      {resetModal && (
+        <ResetPasswordModal
+          open={resetModal}
+          onClose={() => {
+            setResetModal(false);
+            setSevakToReset(null);
+          }}
+          sevak={sevakToReset}
         />
       )}
 

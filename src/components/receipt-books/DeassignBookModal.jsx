@@ -1,5 +1,6 @@
 import React from "react";
 import {
+  Alert,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -11,12 +12,19 @@ import {
 import { toast } from "react-toastify";
 import api, { num, errorText } from "../../api/annkut";
 
-// `last_used_no` only ever moves forward. The server already knows the highest
-// receipt actually written in the book and answers 422 for anything lower, so
-// that value is the floor here too.
+/**
+ * Takes a book back from a family so it can go to the next one. Admin and the
+ * mandal's own Sanchalak.
+ *
+ * `last_used_no` is how many receipts the family actually wrote, and it
+ * carries over: hand a book back at 7 and the next parivar starts at 8, not 1.
+ * It only ever moves forward — the server knows the highest receipt already
+ * written and answers 422 for anything lower, so that is the floor here too.
+ */
 const DeassignBookModal = ({ open, onClose, book, onDeassigned }) => {
   const recorded = num(book?.last_used_no);
   const endNo = num(book?.end_no) || 50;
+  const holder = book?.parivar_code || "this family";
 
   const [lastUsedNo, setLastUsedNo] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
@@ -48,11 +56,13 @@ const DeassignBookModal = ({ open, onClose, book, onDeassigned }) => {
     try {
       setSubmitting(true);
       const res = await api.deassignBook(num(book?.id), lastUsedNo);
-      toast.success(res?.message || "Receipt book returned.");
+      toast.success(res?.message || "Receipt book taken back.");
       onClose?.();
       onDeassigned?.();
     } catch (e) {
-      toast.error(errorText(e, "Failed to deassign book."));
+      // 422 when the number is below what is already recorded — the server
+      // message names the floor, so show it rather than swallowing it.
+      toast.error(errorText(e, "Failed to take the book back."));
     } finally {
       setSubmitting(false);
     }
@@ -60,24 +70,15 @@ const DeassignBookModal = ({ open, onClose, book, onDeassigned }) => {
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>Deassign Book {book?.book_no}</DialogTitle>
+      <DialogTitle>Take back book {book?.book_no}?</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Record the <strong>last used receipt number</strong>.
-          {recorded > 0 ? (
-            <>
-              {" "}
-              Receipt <strong>{recorded}</strong> is already recorded, so it
-              cannot go below that.
-            </>
-          ) : (
-            <> Leave it at 0 if none were used.</>
-          )}
+          Currently with parivar <strong>{holder}</strong>.
         </Typography>
 
         <TextField
           fullWidth
-          label="Last Used Receipt No."
+          label="Receipts used so far"
           inputMode="numeric"
           margin="dense"
           value={lastUsedNo}
@@ -86,13 +87,22 @@ const DeassignBookModal = ({ open, onClose, book, onDeassigned }) => {
             setLastUsedNo(v);
             setError(validate(v));
           }}
-          helperText={error || `Between ${recorded} and ${endNo}`}
+          helperText={
+            error ||
+            `Between ${recorded} and ${endNo}. The next family continues from ${
+              num(lastUsedNo) + 1
+            }.`
+          }
           error={Boolean(error)}
         />
+
+        <Alert severity="warning" sx={{ mt: 2 }}>
+          {holder} will not be able to add any more seva in this book.
+        </Alert>
       </DialogContent>
 
       <DialogActions>
-        <Button onClick={onClose} color="inherit">
+        <Button onClick={onClose} color="inherit" disabled={submitting}>
           Cancel
         </Button>
         <Button
@@ -101,7 +111,7 @@ const DeassignBookModal = ({ open, onClose, book, onDeassigned }) => {
           color="warning"
           disabled={submitting || Boolean(error)}
         >
-          {submitting ? "Deassigning..." : "Deassign"}
+          {submitting ? "Taking back..." : "Take back"}
         </Button>
       </DialogActions>
     </Dialog>

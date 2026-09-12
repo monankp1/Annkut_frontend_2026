@@ -1,6 +1,13 @@
 import React, { useState } from "react";
 import { Modal, ModalHeader, ModalBody, ModalFooter } from "reactstrap";
 import api, { errorText } from "../api/annkut";
+import {
+  cleanPhone,
+  isCompletePhone,
+  isPartialPhone,
+  phoneInputProps,
+  PHONE_ERROR,
+} from "../utils/phone";
 import { toast, ToastContainer } from "react-toastify";
 import TextField from "@mui/material/TextField";
 import Button from "@mui/material/Button";
@@ -16,7 +23,7 @@ import {
 // one parivar code, so the code is asked for rather than generated: entering an
 // existing one adds this person to that family, a new one starts a family.
 export const PANKH_OPTIONS = [
-  { code: "S", label: "Satsangi" },
+  { code: "S", label: "Sanyukt" },
   { code: "M", label: "Mahila" },
   { code: "YK", label: "Yuvak" },
   { code: "YT", label: "Yuvati" },
@@ -45,7 +52,8 @@ function AddAnnkutSevakModal({ modal, setModal, mandal, refreshData }) {
     const { name, value } = e.target;
 
     if (name === "mobile") {
-      if (!/^\d{0,10}$/.test(value)) return;
+      setFormData((p) => ({ ...p, mobile: cleanPhone(value) }));
+      return;
     }
 
     if (name === "target_forms" && !/^\d*$/.test(value)) return;
@@ -72,8 +80,8 @@ function AddAnnkutSevakModal({ modal, setModal, mandal, refreshData }) {
       return;
     }
 
-    if (formData.mobile && formData.mobile.length !== 10) {
-      toast.error("Mobile must be 10 digits.");
+    if (formData.mobile && !isCompletePhone(formData.mobile)) {
+      toast.error(PHONE_ERROR);
       return;
     }
 
@@ -184,7 +192,11 @@ function AddAnnkutSevakModal({ modal, setModal, mandal, refreshData }) {
             fullWidth
             margin="normal"
             color="secondary"
-            inputProps={{ maxLength: 10, inputMode: "numeric" }}
+            error={isPartialPhone(formData.mobile)}
+            helperText={
+              isPartialPhone(formData.mobile) ? PHONE_ERROR : "10 digits"
+            }
+            inputProps={phoneInputProps}
           />
 
           <FormControl fullWidth margin="normal" size="small">

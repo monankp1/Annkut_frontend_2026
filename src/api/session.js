@@ -78,51 +78,55 @@ export const parivarCode = (sevak) => parivarOf(sevak)?.code || "";
  */
 export const parivarMembers = (sevak) => parivarOf(sevak)?.members || [];
 
-/**
- * Whether to draw the edit and void buttons on a seva entry.
- *
- * Only a karyakar may change a recorded receipt — the server answers 403 for
- * everybody else, family included, since the record has to keep matching the
- * paper. Reading is open to the whole family either way.
- */
-export const canManageSeva = (sevak) => hasMandalScope(sevak);
-
 // -- who may do what -------------------------------------------------------
+//
+// Scope answers "which data", permissions answer "which verbs", and a write
+// needs both. A Sant Nirdeshak reaches a whole xetra but may change nothing; a
+// Sanchalak may edit, but only inside his own mandal. Permissions come from
+// the caller's post and ride along in the login payload.
+//
+// These gate the UI and nothing more. The server re-checks every request, so a
+// hidden button protects nothing — and a feature the server would allow should
+// not be hidden.
+
+export const permissionsOf = (sevak) => accessOf(sevak).permissions || [];
+
+/** Holds the ADMIN post: every permission, every mandal. */
+export const isAdmin = (sevak) => Boolean(accessOf(sevak).is_admin);
+
+/** Admin implies everything, so it never needs listing in `permissions`. */
+export const can = (sevak, code) =>
+  isAdmin(sevak) || permissionsOf(sevak).includes(code);
+
+/** Name, mobile, pankh and target. Admin + Sanchalak (own mandal). */
+export const canEditSevak = (sevak) => can(sevak, "sevak.edit");
+
+/** Admin only — a Sanchalak corrects a record, he does not add people. */
+export const canCreateSevak = (sevak) => can(sevak, "sevak.create");
+
+/** Admin only. */
+export const canDeactivateSevak = (sevak) => can(sevak, "sevak.deactivate");
 
 /**
- * Mandal Sanchalak.
- *
- * There is no post for this and no scope row either: the posts table holds
- * only KOTHARI, SANT_NIRDESHAK, NIRDESHAK, SAH_NIRDESHAK and YUVA_NIRDESHAK.
- * The 35 sanchalaks are identifiable only by their Sevak ID, which is "RK"
- * plus the mandal code plus a sequence — one per mandal, RKNK036 for Narayan
- * Kunj and so on.
- *
- * Matching on a prefix is brittle, so it lives here and nowhere else: when the
- * backend grows a real MANDAL_SANCHALAK post, this one line changes.
+ * Set another sevak's password when they are locked out. Admin only — a
+ * Sanchalak cannot, even inside his own mandal.
  */
-export const isMandalSanchalak = (sevak) =>
-  /^RK/i.test(String((sevak && sevak.sevak_id) || ""));
-
-/** Full run of the place. Today that is the Kothari, the only GLOBAL holder. */
-export const isAdmin = (sevak) => isGlobal(sevak);
+export const canResetPassword = (sevak) => can(sevak, "user.reset_password");
 
 /**
- * Editing an annkut sevak's details — the sanchalak who actually knows the
- * family, or an admin.
+ * Editing or voiding a recorded seva. Admin only: once the paper receipt is
+ * written the record has to keep matching it.
  */
-export const canEditSevak = (sevak) =>
-  isAdmin(sevak) || isMandalSanchalak(sevak);
+export const canManageSeva = (sevak) => can(sevak, "seva.manage");
+
+/** Issue a book the mandal already holds to a parivar. Admin + Sanchalak. */
+export const canAssignBook = (sevak) => can(sevak, "book.assign");
 
 /**
- * Deactivating one — admin only. A sanchalak may correct a record but not
- * remove a person from the roster.
+ * Stock control — add a book to a mandal, take one back, edit, submit,
+ * delete. Admin only.
  */
-export const canDeactivateSevak = (sevak) => isAdmin(sevak);
-
-/** Who gets the mandal / sevak-list screens at all. */
-export const canSeeSevakList = (sevak) =>
-  hasMandalScope(sevak) || isMandalSanchalak(sevak);
+export const canManageBooks = (sevak) => can(sevak, "book.manage");
 
 export const postCodes = (sevak) =>
   ((sevak && sevak.posts) || []).map((p) => p.code);

@@ -1,7 +1,15 @@
 // src/pages/ReceiptBooks.jsx
 import React from "react";
 import {
+  Alert,
   Box,
+  Paper,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
   Button,
   Chip,
   IconButton,
@@ -16,7 +24,12 @@ import {
 import { toast, ToastContainer } from "react-toastify";
 import Header from "../components/Header";
 import api, { num, errorText } from "../api/annkut";
-import { getSevak, hasMandalScope } from "../api/session";
+import {
+  getSevak,
+  hasMandalScope,
+  canAssignBook,
+  canManageBooks,
+} from "../api/session";
 
 import MandalGrid from "../components/receipt-books/MandalGrid";
 import BookTable from "../components/receipt-books/BookTable";
@@ -25,11 +38,18 @@ import AssignBookModal from "../components/receipt-books/AssignBookModal";
 import DeassignBookModal from "../components/receipt-books/DeassignBookModal";
 import AddBookModal from "../components/receipt-books/AddBookModal";
 import EditBookModal from "../components/receipt-books/EditBookModal";
+import TransferBookModal from "../components/receipt-books/TransferBookModal";
 
 export default function ReceiptBooks() {
   const me = getSevak();
   const scoped = hasMandalScope(me);
   const ownMandal = me?.mandal || null;
+
+  // Stock control is the admin's: books enter a mandal and come back from a
+  // parivar only on his say-so. A sanchalak does one thing — hand a book his
+  // mandal already holds to one of its families.
+  const mayAssign = canAssignBook(me);
+  const mayManage = canManageBooks(me);
 
   // Everything is addressed by mandal_id: a mandal code like "NK" is unique
   // only inside its xetra, so the name alone is never enough.
@@ -61,6 +81,17 @@ export default function ReceiptBooks() {
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [deletingBook, setDeletingBook] = React.useState(null);
   const [deleteSubmitting, setDeleteSubmitting] = React.useState(false);
+
+  const [submitOpen, setSubmitOpen] = React.useState(false);
+  const [submittingBook, setSubmittingBook] = React.useState(null);
+  const [submitBusy, setSubmitBusy] = React.useState(false);
+
+  const [transferOpen, setTransferOpen] = React.useState(false);
+  const [transferBook, setTransferBook] = React.useState(null);
+
+  // The office pool: stock with no family holding it and pages still left,
+  // across every mandal in scope.
+  const [pool, setPool] = React.useState([]);
 
   const [addOpen, setAddOpen] = React.useState(false);
 
@@ -146,7 +177,8 @@ export default function ReceiptBooks() {
   };
 
   const refresh = () => {
-    if (mode === "mandals" && multiMandal) fetchMandals();
+    if (mode === "pool") fetchPool();
+    else if (mode === "mandals" && multiMandal) fetchMandals();
     else fetchBooks(activeMandal?.id);
   };
 
@@ -206,6 +238,35 @@ export default function ReceiptBooks() {
     setDeassignBook(null);
   };
 
+  const openTransferModal = (row) => {
+    setTransferBook(row);
+    setTransferOpen(true);
+  };
+  const closeTransferModal = () => {
+    setTransferOpen(false);
+    setTransferBook(null);
+  };
+
+  const fetchPool = React.useCallback(async () => {
+    setError("");
+    setLoading(true);
+    try {
+      const rows = await api.bookPool();
+      setPool(Array.isArray(rows) ? rows : []);
+    } catch (e) {
+      console.error("Pool error:", e);
+      setError(errorText(e, "Failed to load the office pool."));
+      setPool([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const openPool = async () => {
+    setMode("pool");
+    await fetchPool();
+  };
+
   const openAddModal = () => {
     if (!activeMandal?.id) {
       toast.error("Select a mandal first.");
@@ -214,34 +275,58 @@ export default function ReceiptBooks() {
     setAddOpen(true);
   };
 
-  const submitMarkSubmitted = React.useCallback(
-    async (row) => {
-      if (!row?.id) return;
-      if (!window.confirm(`Mark book ${row.book_no} as submitted?`)) return;
+  // Submitting is one-way: there is no endpoint that un-submits a book, so it
+  // is confirmed as plainly as the delete.
+  const openSubmitConfirm = (row) => {
+    setSubmittingBook(row);
+    setSubmitOpen(true);
+  };
+  const closeSubmitConfirm = () => {
+    setSubmitOpen(false);
+    setSubmittingBook(null);
+  };
 
-      try {
-        setLoading(true);
-        setError("");
-        const res = await api.submitBook(num(row.id));
-        toast.success(res?.message || "Receipt book marked as submitted.");
-        await fetchBooks(activeMandal?.id);
-      } catch (e) {
-        console.error("Submit error:", e);
-        toast.error(errorText(e, "Failed to submit book."));
-      } finally {
-        setLoading(false);
-      }
-    },
-    [activeMandal, fetchBooks]
-  );
+  const doSubmitBook = async () => {
+    if (!submittingBook?.id) return;
+
+    try {
+      setSubmitBusy(true);
+      setError("");
+      const res = await api.submitBook(num(submittingBook.id));
+      // SUBMITTED and CLOSED end very differently for the book, so the
+      // server's own wording is what the user sees.
+      const closed = String(res?.status || "").toUpperCase() === "CLOSED";
+      const msg = res?.message || "Receipt book handed in.";
+      if (closed) toast.warning(msg);
+      else toast.success(msg);
+      closeSubmitConfirm();
+      await fetchBooks(activeMandal?.id);
+    } catch (e) {
+      console.error("Submit error:", e);
+      toast.error(errorText(e, "Failed to submit book."));
+    } finally {
+      setSubmitBusy(false);
+    }
+  };
 
   // A book is held by a parivar, not by one person: it stays in the house and
   // whoever is around writes in it.
   const ownerChip = (row) => {
     const status = String(row?.status || "").toUpperCase();
 
-    if (status === "SUBMITTED" || row?.submitted_at) {
-      return <Chip size="small" label="Submitted" variant="outlined" />;
+    if (status === "CLOSED") {
+      return <Chip size="small" label="Closed" variant="outlined" />;
+    }
+
+    if (status === "SUBMITTED") {
+      return (
+        <Chip
+          size="small"
+          color="info"
+          variant="outlined"
+          label={`With office · ${num(row?.remaining)} left`}
+        />
+      );
     }
 
     if (row?.parivar_id) {
@@ -273,9 +358,17 @@ export default function ReceiptBooks() {
           <Typography variant="h5">Receipt Books</Typography>
 
           <Box display="flex" alignItems="center" gap={1}>
-            {mode === "books" && activeMandal?.id && (
+            {mode === "books" && activeMandal?.id && mayManage && (
               <Button variant="contained" onClick={openAddModal}>
                 Add Book
+              </Button>
+            )}
+
+            {/* Stock that came back part-used is worth redistributing, and
+                only the office can move it. */}
+            {mayManage && mode !== "pool" && (
+              <Button variant="outlined" onClick={openPool}>
+                Office pool
               </Button>
             )}
 
@@ -292,6 +385,92 @@ export default function ReceiptBooks() {
             Your account is not attached to a mandal, so there are no books to
             manage here.
           </Box>
+        )}
+
+        {mode === "pool" && (
+          <>
+            <Box display="flex" alignItems="center" gap={1} mb={1}>
+              <Button
+                variant="outlined"
+                onClick={() => {
+                  setMode(multiMandal ? "mandals" : "books");
+                  setPool([]);
+                }}
+                startIcon={<i className="bi bi-arrow-left"></i>}
+              >
+                Back
+              </Button>
+              <Typography variant="body2" color="text.secondary">
+                Books no family is holding, with receipts still left. Closed
+                books never appear here.
+              </Typography>
+            </Box>
+
+            {error && (
+              <Box mb={1} color="error.main">
+                {error}
+              </Box>
+            )}
+
+            <TableContainer component={Paper} sx={{ maxHeight: 650 }}>
+              <Table stickyHeader>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Book</TableCell>
+                    <TableCell>From</TableCell>
+                    <TableCell>Left</TableCell>
+                    <TableCell>Next</TableCell>
+                    <TableCell>Status</TableCell>
+                    <TableCell>Action</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {pool.map((row) => (
+                    <TableRow key={row.id} hover>
+                      <TableCell>{row.book_no}</TableCell>
+                      <TableCell>{row.mandal_name}</TableCell>
+                      <TableCell>{num(row.remaining)}</TableCell>
+                      <TableCell>{num(row.next_receipt_no)}</TableCell>
+                      <TableCell>
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          label={
+                            String(row.status).toUpperCase() === "SUBMITTED"
+                              ? "Came back part-used"
+                              : "Never issued"
+                          }
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          size="small"
+                          variant="contained"
+                          onClick={() => openTransferModal(row)}
+                        >
+                          Send to…
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+
+                  {pool.length === 0 && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={6}
+                        align="center"
+                        sx={{ py: 4, color: "text.secondary" }}
+                      >
+                        {loading
+                          ? "Loading the pool…"
+                          : "Nothing waiting to be redistributed"}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </>
         )}
 
         {multiMandal && mode === "mandals" && (
@@ -358,10 +537,13 @@ export default function ReceiptBooks() {
             <BookTable
               rows={filteredBooks}
               loading={loading}
+              mayAssign={mayAssign}
+              mayManage={mayManage}
               ownerChip={ownerChip}
               onAssign={openAssignModal}
               onDeassign={openDeassignModal}
-              onSubmitBook={submitMarkSubmitted}
+              onSubmitBook={openSubmitConfirm}
+              onTransfer={openTransferModal}
               onEdit={openEditModal}
               onDelete={openDeleteConfirm}
             />
@@ -391,12 +573,79 @@ export default function ReceiptBooks() {
         onAdded={() => fetchBooks(activeMandal?.id)}
       />
 
+      <TransferBookModal
+        open={transferOpen}
+        onClose={closeTransferModal}
+        book={transferBook}
+        onTransferred={() =>
+          mode === "pool" ? fetchPool() : fetchBooks(activeMandal?.id)
+        }
+      />
+
       <EditBookModal
         open={editOpen}
         onClose={closeEditModal}
         book={editingBook}
         onSaved={() => fetchBooks(activeMandal?.id)}
       />
+
+      <Dialog
+        open={submitOpen}
+        onClose={closeSubmitConfirm}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle>Submit book {submittingBook?.book_no}?</DialogTitle>
+        <DialogContent>
+          {/* Where the book ends up depends entirely on whether any page is
+              left, so say which of the two will happen before they commit. */}
+          {num(submittingBook?.remaining) > 0 ? (
+            <>
+              <Alert severity="info" sx={{ mb: 2 }}>
+                {num(submittingBook?.remaining)} receipts still left, so the
+                book goes back to the office and can be sent to any mandal.
+              </Alert>
+              <Typography variant="body2">
+                It leaves
+                {submittingBook?.parivar_code
+                  ? ` parivar ${submittingBook.parivar_code}`
+                  : " this mandal"}{" "}
+                and stops accepting seva here. The next mandal picks it up at
+                receipt <strong>{num(submittingBook?.next_receipt_no)}</strong>.
+              </Typography>
+            </>
+          ) : (
+            <>
+              <Alert severity="warning" sx={{ mb: 2 }}>
+                This cannot be undone.
+              </Alert>
+              <Typography variant="body2">
+                Every receipt has been used, so book{" "}
+                <strong>{submittingBook?.book_no}</strong> will be closed
+                permanently. It can never be issued again, to this mandal or
+                any other.
+              </Typography>
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={closeSubmitConfirm}
+            color="inherit"
+            disabled={submitBusy}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={doSubmitBook}
+            color="success"
+            variant="contained"
+            disabled={submitBusy}
+          >
+            {submitBusy ? "Submitting..." : "Submit book"}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={deleteOpen} onClose={closeDeleteConfirm} fullWidth maxWidth="xs">
         <DialogTitle>Delete Book {deletingBook?.book_no}</DialogTitle>

@@ -8,13 +8,19 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  IconButton,
 } from "@mui/material";
 import ProgressBar from "react-bootstrap/ProgressBar";
 import { toast, ToastContainer } from "react-toastify";
 import api, { num, errorText } from "../api/annkut";
-import { getSevak, canEditSevak, canDeactivateSevak } from "../api/session";
+import {
+  getSevak,
+  canEditSevak,
+  canDeactivateSevak,
+  canResetPassword,
+} from "../api/session";
 import EditSevakModal from "../components/EditSevakModal";
+import ResetPasswordModal from "../components/ResetPasswordModal";
+import SevakActionsMenu from "../components/SevakActionsMenu";
 
 // One mandal's sevaks, opened with the mandal row in router state:
 //
@@ -32,7 +38,8 @@ const MandalSevakList = () => {
   const me = getSevak();
   const mayEdit = canEditSevak(me);
   const mayDeactivate = canDeactivateSevak(me);
-  const showActions = mayEdit || mayDeactivate;
+  const mayResetPassword = canResetPassword(me);
+  const showActions = mayEdit || mayResetPassword || mayDeactivate;
 
   const [sevaks, setSevaks] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -42,6 +49,9 @@ const MandalSevakList = () => {
 
   const [openConfirmDialog, setOpenConfirmDialog] = useState(false);
   const [itemToDeactivate, setItemToDeactivate] = useState(null);
+
+  const [resetModal, setResetModal] = useState(false);
+  const [sevakToReset, setSevakToReset] = useState(null);
 
   const fetchSevakList = useCallback(async () => {
     if (!mandalId) return;
@@ -175,27 +185,19 @@ const MandalSevakList = () => {
                   <td>{item?.mobile ?? "-"}</td>
                   {showActions && (
                     <td>
-                      {mayEdit && (
-                        <IconButton
-                          color="warning"
-                          onClick={() => handleEdit(item)}
-                          style={{ marginRight: "10px" }}
-                          size="small"
-                          title="Edit"
-                        >
-                          <i className="bi fs-6 bi-pencil"></i>
-                        </IconButton>
-                      )}
-                      {mayDeactivate && (
-                        <IconButton
-                          color="error"
-                          onClick={() => handleDeactivate(item)}
-                          size="small"
-                          title="Deactivate"
-                        >
-                          <i className="bi fs-6 bi-person-x"></i>
-                        </IconButton>
-                      )}
+                      <SevakActionsMenu
+                        sevak={item}
+                        isSelf={item?.sevak_code === me?.sevak_id}
+                        mayEdit={mayEdit}
+                        mayResetPassword={mayResetPassword}
+                        mayDeactivate={mayDeactivate}
+                        onEdit={handleEdit}
+                        onResetPassword={(row) => {
+                          setSevakToReset(row);
+                          setResetModal(true);
+                        }}
+                        onDeactivate={handleDeactivate}
+                      />
                     </td>
                   )}
                 </tr>
@@ -223,8 +225,8 @@ const MandalSevakList = () => {
         <DialogTitle>Deactivate {itemToDeactivate?.full_name}</DialogTitle>
         <DialogContent>
           <p>
-            This hides the sevak from lists and takes away their login. Nothing
-            is deleted.
+            They will not be able to sign in, and will be removed from the
+            mandal list. Seva already recorded is kept.
           </p>
         </DialogContent>
         <DialogActions>
@@ -244,6 +246,17 @@ const MandalSevakList = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {resetModal && (
+        <ResetPasswordModal
+          open={resetModal}
+          onClose={() => {
+            setResetModal(false);
+            setSevakToReset(null);
+          }}
+          sevak={sevakToReset}
+        />
+      )}
 
       {editModal && (
         <EditSevakModal

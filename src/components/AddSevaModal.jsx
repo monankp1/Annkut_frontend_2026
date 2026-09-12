@@ -1,6 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Modal, ModalHeader, ModalBody, ModalFooter } from "reactstrap";
 import api, { num, errorText } from "../api/annkut";
+import {
+  cleanPhone,
+  isCompletePhone,
+  phoneInputProps,
+  PHONE_ERROR_GU,
+} from "../utils/phone";
 import { toast, ToastContainer } from "react-toastify";
 import TextField from "@mui/material/TextField";
 import Radio from "@mui/material/Radio";
@@ -9,6 +15,7 @@ import FormControl from "@mui/material/FormControl";
 import FormLabel from "@mui/material/FormLabel";
 import CircularProgress from "@mui/material/CircularProgress";
 import {
+  Alert,
   Button,
   FormControlLabel,
   InputLabel,
@@ -35,6 +42,9 @@ function AddSevaModal({ modal, setModal, onBehalfOf, onAdded }) {
   const [loader, setLoader] = useState(false);
 
   const [myBooks, setMyBooks] = useState([]);
+  // Finished books, kept only so a family with nothing left to write in is
+  // told why rather than seeing an empty dropdown.
+  const [fullBooks, setFullBooks] = useState([]);
   const [booksLoading, setBooksLoading] = useState(false);
   const [booksError, setBooksError] = useState("");
 
@@ -62,13 +72,17 @@ function AddSevaModal({ modal, setModal, onBehalfOf, onAdded }) {
       try {
         setBooksLoading(true);
         setBooksError("");
-        const rows = await api.myBooks();
-        if (!ignore) setMyBooks(Array.isArray(rows) ? rows : []);
+        const { books, full_books } = await api.myBooksWithFull();
+        if (!ignore) {
+          setMyBooks(books);
+          setFullBooks(full_books);
+        }
       } catch (e) {
         console.error("my_books error:", e);
         if (!ignore) {
           setBooksError(errorText(e, "Unable to load your books."));
           setMyBooks([]);
+          setFullBooks([]);
         }
       } finally {
         if (!ignore) setBooksLoading(false);
@@ -87,7 +101,7 @@ function AddSevaModal({ modal, setModal, onBehalfOf, onAdded }) {
       setCustomAmount("");
     }
 
-    const v = name === "sahyogi_number" ? value.replace(/[^\d]/g, "") : value;
+    const v = name === "sahyogi_number" ? cleanPhone(value) : value;
 
     setFormData((p) => ({ ...p, [name]: v }));
   };
@@ -121,6 +135,8 @@ function AddSevaModal({ modal, setModal, onBehalfOf, onAdded }) {
     if (!formData.sahyogi_middle_name.trim())
       errs.sahyogi_middle_name = "સહયોગી ના પિતા નું નામ લાખો";
     if (!formData.sahyogi_number) errs.sahyogi_number = "સહયોગી નો નંબર લાખો";
+    else if (!isCompletePhone(formData.sahyogi_number))
+      errs.sahyogi_number = PHONE_ERROR_GU;
 
     if (formData.seva_amount === "other") {
       if (!customAmount) {
@@ -196,6 +212,17 @@ function AddSevaModal({ modal, setModal, onBehalfOf, onAdded }) {
               This seva will be recorded for{" "}
               <strong>{onBehalfOf.full_name}</strong> ({onBehalfOf.sevak_code}).
             </Typography>
+          )}
+
+          {/* A finished book disappears from the dropdown, which looks like
+              the family has none at all. Say what actually happened. */}
+          {!booksLoading && myBooks.length === 0 && fullBooks.length > 0 && (
+            <Alert severity="warning" sx={{ mb: 1 }}>
+              {fullBooks.length === 1
+                ? `બુક ${fullBooks[0].book_no} પૂરી થઈ ગઈ છે.`
+                : "તમારી બધી બુક પૂરી થઈ ગઈ છે."}{" "}
+              નવી બુક માટે તમારા સંચાલકનો સંપર્ક કરો.
+            </Alert>
           )}
 
           <FormControl fullWidth variant="outlined" margin="normal" size="small">
@@ -307,11 +334,7 @@ function AddSevaModal({ modal, setModal, onBehalfOf, onAdded }) {
               error={Boolean(errors.sahyogi_number)}
               helperText={errors.sahyogi_number}
               fullWidth
-              inputProps={{
-                inputMode: "numeric",
-                pattern: "[0-9]{10}",
-                maxLength: 10,
-              }}
+              inputProps={phoneInputProps}
             />
           </FormControl>
 

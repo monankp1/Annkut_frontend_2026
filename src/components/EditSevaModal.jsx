@@ -6,6 +6,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Modal, ModalHeader, ModalBody, ModalFooter } from "reactstrap";
 import api, { num, errorText } from "../api/annkut";
+import {
+  cleanPhone,
+  isCompletePhone,
+  phoneInputProps,
+  PHONE_ERROR_GU,
+} from "../utils/phone";
 import { toast, ToastContainer } from "react-toastify";
 import TextField from "@mui/material/TextField";
 import Radio from "@mui/material/Radio";
@@ -93,9 +99,9 @@ function EditSevaModal({ modal, setModal, sevakData, refreshData }) {
       setCustomAmount("");
     }
 
-    const nextValue = ["receipt_no", "sahyogi_number"].includes(name)
-      ? value.replace(/[^\d]/g, "")
-      : value;
+    let nextValue = value;
+    if (name === "sahyogi_number") nextValue = cleanPhone(value);
+    else if (name === "receipt_no") nextValue = value.replace(/[^\d]/g, "");
 
     setFormData((prev) => ({ ...prev, [name]: nextValue }));
   };
@@ -118,6 +124,8 @@ function EditSevaModal({ modal, setModal, sevakData, refreshData }) {
       formErrors.sahyogi_middle_name = "સહયોગી ના પિતા નું નામ લાખો";
     if (!formData.sahyogi_number)
       formErrors.sahyogi_number = "સહયોગી નો નંબર લાખો";
+    else if (!isCompletePhone(formData.sahyogi_number))
+      formErrors.sahyogi_number = PHONE_ERROR_GU;
 
     if (formData.seva_amount === "other") {
       if (!customAmount) {
@@ -257,11 +265,7 @@ function EditSevaModal({ modal, setModal, sevakData, refreshData }) {
               error={Boolean(errors.sahyogi_number)}
               helperText={errors.sahyogi_number}
               fullWidth
-              inputProps={{
-                inputMode: "numeric",
-                pattern: "[0-9]{10}",
-                maxLength: 10,
-              }}
+              inputProps={phoneInputProps}
             />
           </FormControl>
 

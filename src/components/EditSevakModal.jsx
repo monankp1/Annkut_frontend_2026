@@ -15,6 +15,12 @@ import {
 import TextField from "@mui/material/TextField";
 import { toast } from "react-toastify";
 import api, { num, errorText } from "../api/annkut";
+import {
+  cleanPhone,
+  isCompletePhone,
+  phoneInputProps,
+  PHONE_ERROR,
+} from "../utils/phone";
 import { PANKH_OPTIONS } from "./AddAnnkutSevakModal";
 
 const asStr = (v) => (v === undefined || v === null ? "" : String(v));
@@ -45,7 +51,7 @@ export default function EditSevakModal({
       first_name: asStr(sevakData.first_name),
       middle_name: asStr(sevakData.middle_name),
       mobile: asStr(sevakData.mobile),
-      // 12 sevaks legitimately have no pankh; "" keeps it unset.
+      // 19 sevaks legitimately have no pankh; "" keeps it unset.
       pankh: asStr(sevakData.pankh),
       target_forms: asStr(num(sevakData.target_forms)),
     });
@@ -57,8 +63,8 @@ export default function EditSevakModal({
   const validate = (data) => {
     const next = {};
     if (!data.first_name.trim()) next.first_name = "First name is required.";
-    if (data.mobile && !/^\d{10}$/.test(data.mobile)) {
-      next.mobile = "Mobile must be exactly 10 digits.";
+    if (data.mobile && !isCompletePhone(data.mobile)) {
+      next.mobile = PHONE_ERROR;
     }
     if (!/^\d*$/.test(data.target_forms)) {
       next.target_forms = "Digits only.";
@@ -70,7 +76,7 @@ export default function EditSevakModal({
     const { name } = e.target;
     let { value } = e.target;
 
-    if (name === "mobile") value = asStr(value).replace(/\D/g, "").slice(0, 10);
+    if (name === "mobile") value = cleanPhone(value);
     if (name === "target_forms") value = asStr(value).replace(/\D/g, "");
 
     const next = { ...formData, [name]: value };
@@ -157,11 +163,11 @@ export default function EditSevakModal({
           label="Mobile"
           name="mobile"
           type="text"
-          inputMode="numeric"
           value={formData.mobile}
           onChange={handleChange}
           error={Boolean(errors.mobile)}
-          helperText={errors.mobile || ""}
+          helperText={errors.mobile || "10 digits"}
+          inputProps={phoneInputProps}
         />
 
         <FormControl fullWidth margin="normal" size="small">

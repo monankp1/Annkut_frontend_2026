@@ -255,6 +255,26 @@ class AnnkutApi {
     });
   }
 
+  /**
+   * Sets another sevak's password, for someone locked out entirely — wrong
+   * password and a mobile that is wrong or is the 1234567890 placeholder, so
+   * login/forgot_password cannot help them. ADMIN only.
+   *
+   * Omit `newPassword` and the account goes back to the shared first-login
+   * password with must_change_password set.
+   *
+   * → { password, sevak_id, name, must_change_password }. That `password` is
+   * the one and only time the value is readable — nothing is stored in clear,
+   * so it has to be shown to the administrator there and then. Every reset
+   * revokes the sevak's sessions and is written to activity_log.
+   */
+  resetPassword(sevakId, newPassword) {
+    return this.request("sevak/reset_password", {
+      sevak_id: sevakId,
+      ...(newPassword ? { new_password: newPassword } : {}),
+    });
+  }
+
   /** Deactivates. Receipts reference the collector, so nothing is deleted. */
   deactivateSevak(sevakId) {
     return this.request("sevak/delete_sevak", { sevak_id: sevakId });
@@ -386,9 +406,26 @@ class AnnkutApi {
    * Books the caller's parivar may write in. A book stays in the house rather
    * than with one person, so this is the same list for every family tab — the
    * selected tab decides who the seva counts for, not whose book it is.
+   *
+   * Finished books are not here; use myBooksWithFull() to see those too.
    */
   myBooks() {
     return this.request(`${BOOKS}/my_books`, {}).then((r) => r.books || []);
+  }
+
+  /**
+   * The same call keeping both halves: `books` are writable and belong in the
+   * Add Seva dropdown, `full_books` are finished and waiting to be handed in.
+   *
+   * Worth having so a family whose only book is full gets told that, rather
+   * than watching it vanish from the dropdown.
+   */
+  myBooksWithFull() {
+    return this.request(`${BOOKS}/my_books`, {}).then((r) => ({
+      parivar_id: r?.parivar_id ?? null,
+      books: r?.books || [],
+      full_books: r?.full_books || [],
+    }));
   }
 
   createBook(data) {
@@ -418,8 +455,41 @@ class AnnkutApi {
     return this.request(`${BOOKS}/update`, { book_id: bookId, ...data });
   }
 
+  /**
+   * Hands a book back to the office. Different from deassign, which keeps it
+   * in the mandal for the next family.
+   *
+   * → { status, remaining }. Receipts left gives SUBMITTED, and the office can
+   * send it to any mandal; none left gives CLOSED, which is a hard lock for
+   * everyone, administrators included. Tell the two apart in the UI — they end
+   * very differently for the book.
+   */
   submitBook(bookId) {
     return this.request(`${BOOKS}/submit`, { book_id: bookId });
+  }
+
+  /**
+   * Stock sitting with no family and still having pages, across every mandal
+   * in scope — what is worth redistributing. CLOSED books never appear.
+   */
+  bookPool() {
+    return this.request(`${BOOKS}/pool`, {}).then((r) => r.books || []);
+  }
+
+  /**
+   * Moves a part-used book to another mandal. ADMIN only.
+   *
+   * The count travels with it: submitted at receipt 4 of 10, it lands with
+   * next_receipt_no 5. Receipts already written keep the mandal that collected
+   * them, so moving a book never rewrites history.
+   *
+   * 409 if it is closed, still with a parivar, or already in that mandal.
+   */
+  transferBook(bookId, mandalId) {
+    return this.request(`${BOOKS}/transfer`, {
+      book_id: bookId,
+      mandal_id: mandalId,
+    });
   }
 
   deleteBook(bookId) {

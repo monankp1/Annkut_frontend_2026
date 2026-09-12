@@ -13,7 +13,6 @@ import api from "../api/annkut";
 import {
   getSevak,
   hasMandalScope,
-  canSeeSevakList,
   postLabel,
   parivarCode,
 } from "../api/session";
@@ -26,9 +25,9 @@ function Header() {
 
   // May be absent for a moment on a cold reload, so nothing here may assume it.
   const sevak = getSevak();
+  // Sanchalaks now hold a MANDAL scope of their own, so one test covers both
+  // screens: reading a mandal is what they have in common.
   const scoped = hasMandalScope(sevak);
-  // A mandal sanchalak holds no scope row, so they need naming separately.
-  const seesSevakList = canSeeSevakList(sevak);
   const post = postLabel(sevak);
 
   // The family code, shown in brackets after the title. A sant belongs to no
@@ -59,28 +58,27 @@ function Header() {
               </Button>
             </NavItem>
 
-            {seesSevakList && (
-              <NavItem style={{ margin: "5px" }}>
-                <Button
-                  color="primary"
-                  onClick={() => navigate("/annkut-sevak-list")}
-                >
-                  Annkut Sevak list
-                </Button>
-              </NavItem>
-            )}
-
-            {/* Books need a mandal in scope; the server answers 403 for
-                anyone else, so there would be nothing to show. */}
+            {/* Both screens need a mandal in scope; the server answers 403
+                for anyone else, so there would be nothing to show. */}
             {scoped && (
-              <NavItem style={{ margin: "5px" }}>
-                <Button
-                  color="secondary"
-                  onClick={() => navigate("/receipt-books")}
-                >
-                  Manage Receipt Books
-                </Button>
-              </NavItem>
+              <>
+                <NavItem style={{ margin: "5px" }}>
+                  <Button
+                    color="primary"
+                    onClick={() => navigate("/annkut-sevak-list")}
+                  >
+                    Annkut Sevak list
+                  </Button>
+                </NavItem>
+                <NavItem style={{ margin: "5px" }}>
+                  <Button
+                    color="secondary"
+                    onClick={() => navigate("/receipt-books")}
+                  >
+                    Manage Receipt Books
+                  </Button>
+                </NavItem>
+              </>
             )}
 
             <NavItem style={{ margin: "5px" }}>
