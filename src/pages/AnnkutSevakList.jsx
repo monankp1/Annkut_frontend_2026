@@ -251,7 +251,7 @@ export default function AnnkutSevakList() {
           </Typography>
 
           <Box display="flex" alignItems="center" gap={1}>
-            {addTargetMandal && mayCreate && (
+            {/* {addTargetMandal && mayCreate && (
               <Button
                 variant="outlined"
                 onClick={() => setShowAddAnnkutSevak(true)}
@@ -259,7 +259,7 @@ export default function AnnkutSevakList() {
               >
                 Add Annkut Sevak
               </Button>
-            )}
+            )} */}
 
             <Tooltip title="Refresh">
               <IconButton onClick={handleRefresh} disabled={loading}>
