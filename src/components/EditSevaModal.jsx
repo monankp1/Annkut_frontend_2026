@@ -12,12 +12,14 @@ import {
   phoneInputProps,
   PHONE_ERROR_GU,
 } from "../utils/phone";
+import { amountRuleForBook } from "../utils/sevaAmount";
 import { toast, ToastContainer } from "react-toastify";
 import TextField from "@mui/material/TextField";
 import Radio from "@mui/material/Radio";
 import RadioGroup from "@mui/material/RadioGroup";
 import FormControl from "@mui/material/FormControl";
 import FormLabel from "@mui/material/FormLabel";
+import FormHelperText from "@mui/material/FormHelperText";
 import CircularProgress from "@mui/material/CircularProgress";
 import { Button, FormControlLabel, Typography } from "@mui/material";
 
@@ -44,6 +46,21 @@ function EditSevaModal({ modal, setModal, sevakData, refreshData }) {
   // A receipt may move to another number inside its own book, never to a
   // different book — so the book is shown, not chosen.
   const [book, setBook] = useState({ book_no: "", start_no: 0, end_no: 0 });
+
+  // The same size rule as the add form, with one allowance: whatever is
+  // already recorded stays selectable, so an entry made before the rule — or
+  // on an odd-sized book — can still be corrected without being forced onto a
+  // different amount.
+  const amountRule = useMemo(() => {
+    const rule = amountRuleForBook(book);
+    const current = formData.seva_amount;
+    return {
+      ...rule,
+      allow500: rule.allow500 || current === "500",
+      allow1000: rule.allow1000 || current === "1000",
+      allowOther: rule.allowOther || current === "other",
+    };
+  }, [book, formData.seva_amount]);
 
   const toggle = () => setModal(!modal);
 
@@ -280,18 +297,24 @@ function EditSevaModal({ modal, setModal, sevakData, refreshData }) {
                 value="500"
                 control={<Radio color="secondary" />}
                 label="500"
+                disabled={!amountRule.allow500}
               />
               <FormControlLabel
                 value="1000"
                 control={<Radio color="secondary" />}
                 label="1000"
+                disabled={!amountRule.allow1000}
               />
               <FormControlLabel
                 value="other"
                 control={<Radio color="secondary" />}
                 label="Other"
+                disabled={!amountRule.allowOther}
               />
             </RadioGroup>
+            {amountRule.note && (
+              <FormHelperText>{amountRule.note}</FormHelperText>
+            )}
           </FormControl>
 
           {formData.seva_amount === "other" && (

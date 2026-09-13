@@ -428,6 +428,24 @@ class AnnkutApi {
     }));
   }
 
+  /**
+   * Finds a book by the number printed on its cover and returns everything
+   * written in it. Book numbers are unique org-wide, so one number is one
+   * book. Backs the admin's book screen.
+   *
+   * → { book, receipts, summary, can_edit }
+   *   receipts  in page order (receipt_no ascending), not date order
+   *   summary   { pages, filled, remaining, collected_amount, unused_numbers }
+   *   can_edit  whether this caller may correct entries in that mandal
+   *
+   * 404 means no book carries that number; 403 means it belongs to a mandal
+   * outside your scope. The two are deliberately distinct — the office needs
+   * to tell "wrong number" from "not yours".
+   */
+  lookupBook(bookNo) {
+    return this.request(`${BOOKS}/lookup`, { book_no: bookNo });
+  }
+
   createBook(data) {
     return this.request(`${BOOKS}/create`, data);
   }

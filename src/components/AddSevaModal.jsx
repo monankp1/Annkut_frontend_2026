@@ -7,12 +7,14 @@ import {
   phoneInputProps,
   PHONE_ERROR_GU,
 } from "../utils/phone";
+import { amountForBook, amountRuleForBook } from "../utils/sevaAmount";
 import { toast, ToastContainer } from "react-toastify";
 import TextField from "@mui/material/TextField";
 import Radio from "@mui/material/Radio";
 import RadioGroup from "@mui/material/RadioGroup";
 import FormControl from "@mui/material/FormControl";
 import FormLabel from "@mui/material/FormLabel";
+import FormHelperText from "@mui/material/FormHelperText";
 import CircularProgress from "@mui/material/CircularProgress";
 import {
   Alert,
@@ -58,6 +60,12 @@ function AddSevaModal({ modal, setModal, onBehalfOf, onAdded }) {
   const selectedBook = useMemo(
     () => myBooks.find((b) => String(b.id) === String(formData.book_id)),
     [myBooks, formData.book_id]
+  );
+
+  // Which amounts this book collects: 25 receipts means ₹500, 10 means ₹1000+.
+  const amountRule = useMemo(
+    () => amountRuleForBook(selectedBook),
+    [selectedBook]
   );
 
   const bookLabel = (b) =>
@@ -109,10 +117,17 @@ function AddSevaModal({ modal, setModal, onBehalfOf, onAdded }) {
   const handleBookChange = (e) => {
     const bookId = e.target.value;
     const b = myBooks.find((x) => String(x.id) === String(bookId));
+
+    // The book settles the amount, so move the selection to one this book
+    // actually collects.
+    const nextAmount = amountForBook(b, formData.seva_amount);
+    if (nextAmount !== "other") setCustomAmount("");
+
     setFormData((p) => ({
       ...p,
       book_id: bookId,
       receipt_no: b?.next_receipt_no ? String(b.next_receipt_no) : "",
+      seva_amount: nextAmount,
     }));
   };
 
@@ -340,6 +355,8 @@ function AddSevaModal({ modal, setModal, onBehalfOf, onAdded }) {
 
           <FormControl component="fieldset" margin="normal">
             <FormLabel component="legend">Amount</FormLabel>
+            {/* Every option stays on screen; the ones this book does not
+                collect are disabled, with the reason underneath. */}
             <RadioGroup
               name="seva_amount"
               value={formData.seva_amount}
@@ -349,18 +366,24 @@ function AddSevaModal({ modal, setModal, onBehalfOf, onAdded }) {
                 value="500"
                 control={<Radio color="secondary" />}
                 label="500"
+                disabled={!amountRule.allow500}
               />
               <FormControlLabel
                 value="1000"
                 control={<Radio color="secondary" />}
                 label="1000"
+                disabled={!amountRule.allow1000}
               />
               <FormControlLabel
                 value="other"
                 control={<Radio color="secondary" />}
                 label="Other"
+                disabled={!amountRule.allowOther}
               />
             </RadioGroup>
+            {amountRule.note && (
+              <FormHelperText>{amountRule.note}</FormHelperText>
+            )}
           </FormControl>
 
           {formData.seva_amount === "other" && (

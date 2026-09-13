@@ -50,6 +50,8 @@ export default function AnnkutSevakList() {
   // A sanchalak may correct a sevak's details inside his own mandal; adding
   // and deactivating stay with the admin.
   const mayEdit = canEditSevak(me);
+  // Kept for the Add Annkut Sevak button below, which is commented out for now.
+  // eslint-disable-next-line no-unused-vars
   const mayCreate = canCreateSevak(me);
   const mayDeactivate = canDeactivateSevak(me);
   const mayResetPassword = canResetPassword(me);

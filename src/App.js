@@ -15,6 +15,7 @@ import ForgotPassword from "./pages/ForgotPassword";
 import AnnkutSevakList from "./pages/AnnkutSevakList";
 import MandalSevakList from "./pages/MandalSevakList";
 import ReceiptBooks from "./pages/ReceiptBooks";
+import BookLookup from "./pages/BookLookup";
 
 function App() {
   // Any expired token, on any screen, lands the user back on the sign-in page.
@@ -66,6 +67,14 @@ function App() {
             element={
               <RequireAuth>
                 <ReceiptBooks />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/book-lookup"
+            element={
+              <RequireAuth>
+                <BookLookup />
               </RequireAuth>
             }
           />

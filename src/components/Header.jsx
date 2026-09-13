@@ -78,6 +78,11 @@ function Header() {
                     Manage Receipt Books
                   </Button>
                 </NavItem>
+                <NavItem style={{ margin: "5px" }}>
+                  <Button color="info" onClick={() => navigate("/book-lookup")}>
+                    Find a Book
+                  </Button>
+                </NavItem>
               </>
             )}
 
