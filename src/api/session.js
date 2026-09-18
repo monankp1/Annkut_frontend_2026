@@ -119,6 +119,24 @@ export const canResetPassword = (sevak) => can(sevak, "user.reset_password");
  */
 export const canManageSeva = (sevak) => can(sevak, "seva.manage");
 
+/**
+ * Who gets the Yuva Pravrutti switch on the mandals screen.
+ *
+ * Named outright rather than derived, because no permission or post marks this
+ * pair out — it is a reporting view two people are responsible for, not a
+ * capability the server grants. Everyone else sees the unfiltered screen.
+ *
+ * The filter itself is enforced nowhere: anyone could send `pravrutti` by
+ * hand and the server would honour it within their own scope. This only keeps
+ * a switch off screens that have no use for it.
+ */
+export const YUVA_FILTER_SEVAK_IDS = ["ASMN083", "AGYP011", "ADMIN26"];
+
+export const canFilterYuva = (sevak) =>
+  YUVA_FILTER_SEVAK_IDS.includes(
+    String((sevak && sevak.sevak_id) || "").toUpperCase()
+  );
+
 /** Issue a book the mandal already holds to a parivar. Admin + Sanchalak. */
 export const canAssignBook = (sevak) => can(sevak, "book.assign");
 

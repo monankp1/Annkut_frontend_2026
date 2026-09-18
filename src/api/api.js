@@ -10,6 +10,7 @@
 // URL, so run the dev server on port 3000.
 
 const FALLBACK_ENDPOINT = "https://production.bharuchbaps.in/index.php/";
+// const FALLBACK_ENDPOINT = " http://localhost:8080/index.php/";
 
 export const BACKEND_ENDPOINT =
   process.env.REACT_APP_BACKEND_ENDPOINT || FALLBACK_ENDPOINT;

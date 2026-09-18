@@ -8,6 +8,7 @@ import {
   canCreateSevak,
   canDeactivateSevak,
   canResetPassword,
+  canFilterYuva,
 } from "../api/session";
 import ResetPasswordModal from "../components/ResetPasswordModal";
 import SevakActionsMenu from "../components/SevakActionsMenu";
@@ -36,6 +37,8 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
+  Switch,
   Tooltip,
   Typography,
 } from "@mui/material";
@@ -55,6 +58,7 @@ export default function AnnkutSevakList() {
   const mayCreate = canCreateSevak(me);
   const mayDeactivate = canDeactivateSevak(me);
   const mayResetPassword = canResetPassword(me);
+  const mayFilterYuva = canFilterYuva(me);
   const showActions = mayEdit || mayResetPassword || mayDeactivate;
 
   const [loading, setLoading] = useState(false);
@@ -62,8 +66,11 @@ export default function AnnkutSevakList() {
 
   const [summary, setSummary] = useState(null);
 
-  const [mandals, setMandals] = useState([]);
   const [qMandal, setQMandal] = useState("");
+
+  // The Yuva Pravrutti switch. Sent to the totals and the sevak list alike, so
+  // the cards and the table always describe the same population.
+  const [yuvaOnly, setYuvaOnly] = useState(false);
 
   const [sevaks, setSevaks] = useState([]);
   const [qSevak, setQSevak] = useState("");
@@ -88,36 +95,40 @@ export default function AnnkutSevakList() {
 
   // ---------- fetchers ----------
 
-  const fetchSummary = useCallback(async (mandalId) => {
+  /**
+   * Headline totals and the mandal cards in one call.
+   *
+   * get_seva_count applies the pravrutti filter to both its summary and its
+   * mandal_array, while get_mandal_list takes no filter at all — so sourcing
+   * the cards from here is what stops yuva totals sitting above whole-mandal
+   * cards.
+   */
+  const fetchSummary = useCallback(async (mandalId, yuvaOnly) => {
+    setLoading(true);
     try {
-      const res = await api.summary(mandalId ? { mandal_id: mandalId } : {});
+      const res = await api.summary({
+        ...(mandalId ? { mandal_id: mandalId } : {}),
+        ...(yuvaOnly ? { pravrutti: "YUVA" } : {}),
+      });
       setSummary(res || null);
     } catch (e) {
       console.error("Error fetching summary:", e);
-    }
-  }, []);
-
-  const fetchMandals = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await api.mandals({});
-      const arr = res?.mandal_array;
-      setMandals(Array.isArray(arr) ? arr : []);
-    } catch (e) {
-      console.error("Failed to fetch mandals:", e);
-      setMandals([]);
-      setError(errorText(e, "Failed to load mandals."));
+      setSummary(null);
+      setError(errorText(e, "Failed to load totals."));
     } finally {
       setLoading(false);
     }
   }, []);
 
-  const fetchSevaks = useCallback(async (mandalId) => {
+  const fetchSevaks = useCallback(async (mandalId, yuvaOnly) => {
     setError("");
     setLoading(true);
     try {
       // An unauthorised mandal_id is a 403, never a silently empty list.
-      const res = await api.sevaks(mandalId ? { mandal_id: mandalId } : {});
+      const res = await api.sevaks({
+        ...(mandalId ? { mandal_id: mandalId } : {}),
+        ...(yuvaOnly ? { pravrutti: "YUVA" } : {}),
+      });
       const rows = res?.sevak;
       setSevaks(Array.isArray(rows) ? rows : []);
     } catch (e) {
@@ -130,14 +141,26 @@ export default function AnnkutSevakList() {
   }, []);
 
   useEffect(() => {
-    fetchSummary();
-    if (scoped) fetchMandals();
-    else if (ownMandal?.id) fetchSevaks(ownMandal.id);
+    fetchSummary(null, false);
+    if (!scoped && ownMandal?.id) fetchSevaks(ownMandal.id, false);
     // Runs once; everything after this is an explicit user action.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ---------- derived ----------
+
+  // The server echoes back the pankh codes the filter resolved to, so the
+  // screen labels itself from that rather than its own copy of the rule.
+  const pankhFilterLabel = useMemo(
+    () => (summary?.pankh_filter || []).join(" + "),
+    [summary]
+  );
+
+  // The cards come from the same response as the totals above them.
+  const mandals = useMemo(
+    () => (Array.isArray(summary?.mandal_array) ? summary.mandal_array : []),
+    [summary]
+  );
 
   const filteredMandals = useMemo(() => {
     const needle = qMandal.trim().toLowerCase();
@@ -179,9 +202,8 @@ export default function AnnkutSevakList() {
   // ---------- handlers ----------
 
   async function handleRefresh() {
-    await fetchSummary(selectedMandal?.id);
-    if (mode === "mandals" && scoped) await fetchMandals();
-    else await fetchSevaks(selectedMandal?.id);
+    await fetchSummary(selectedMandal?.id, yuvaOnly);
+    if (mode === "sevaks") await fetchSevaks(selectedMandal?.id, yuvaOnly);
   }
 
   async function handleMandalCardClick(m) {
@@ -189,7 +211,10 @@ export default function AnnkutSevakList() {
     setSelectedMandal(picked);
     setQSevak("");
     setMode("sevaks");
-    await Promise.all([fetchSevaks(picked.id), fetchSummary(picked.id)]);
+    await Promise.all([
+      fetchSevaks(picked.id, yuvaOnly),
+      fetchSummary(picked.id, yuvaOnly),
+    ]);
   }
 
   function handleBackToMandals() {
@@ -197,7 +222,14 @@ export default function AnnkutSevakList() {
     setQSevak("");
     setSevaks([]);
     setMode("mandals");
-    fetchSummary();
+    fetchSummary(null, yuvaOnly);
+  }
+
+  /** Both views re-fetch, so the cards and the table never disagree. */
+  async function handleYuvaToggle(next) {
+    setYuvaOnly(next);
+    await fetchSummary(selectedMandal?.id, next);
+    if (mode === "sevaks") await fetchSevaks(selectedMandal?.id, next);
   }
 
   function handleEdit(row) {
@@ -253,6 +285,22 @@ export default function AnnkutSevakList() {
           </Typography>
 
           <Box display="flex" alignItems="center" gap={1}>
+            {/* Prefer pravrutti over spelling out ["YK","YT"]: the grouping
+                lives in the database, so if Yuva Pravrutti ever covers a
+                different set of pankh the server follows on its own. */}
+            {mayFilterYuva && (
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={yuvaOnly}
+                    onChange={(e) => handleYuvaToggle(e.target.checked)}
+                    disabled={loading}
+                  />
+                }
+                label="Yuva Pravrutti only"
+              />
+            )}
+
             {/* {addTargetMandal && mayCreate && (
               <Button
                 variant="outlined"
@@ -276,11 +324,25 @@ export default function AnnkutSevakList() {
           <Grid item xs={12}>
             <Paper sx={{ p: 2 }}>
               <Typography variant="subtitle2" color="text.secondary">
-                Target
+                {yuvaOnly ? "Yuva target" : "Target"}
               </Typography>
               <Typography variant="h6">
                 {num(summary?.total_target)}
               </Typography>
+
+              {/* Under the filter this number comes from a different table:
+                  unfiltered it is the mandal's own target, filtered it is the
+                  sum of the matching sevaks' individual targets. The two
+                  answer different questions and will not add up, so the screen
+                  says which one it is showing rather than letting them be
+                  compared. */}
+              {yuvaOnly && (
+                <Typography variant="caption" color="text.secondary">
+                  Sum of individual sevak targets
+                  {pankhFilterLabel ? ` (${pankhFilterLabel})` : ""} — not
+                  comparable with the mandal target.
+                </Typography>
+              )}
             </Paper>
           </Grid>
         </Grid>
