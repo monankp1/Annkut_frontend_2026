@@ -3,7 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import api, { errorText } from "../api/annkut";
-import { hasMandalScope } from "../api/session";
+import { landingPath } from "../api/session";
 import Mandir from "./../resources/mandir.png";
 import bapsLogo from "./../resources/logoBaps.png";
 
@@ -34,16 +34,11 @@ const Login = () => {
 
       toast.success("Login successful");
 
-      // Everyone was seeded with the same password; that has to go before
-      // anything else is reachable.
-      if (sevak?.must_change_password) {
-        navigate("/change-password");
-        return;
-      }
-
-      // Leadership lands on the mandal overview, everyone else on their own
-      // seva entry screen.
-      navigate(hasMandalScope(sevak) ? "/annkut-sevak-list" : "/home");
+      // `replace` so the login page does not stay on the history stack:
+      // pressing Back should not walk into a form they have already used.
+      // landingPath also handles must_change_password, which everyone hits on
+      // first sign-in because all accounts were seeded with one password.
+      navigate(landingPath(sevak), { replace: true });
     } catch (error) {
       toast.error(errorText(error, "Login failed."));
     } finally {

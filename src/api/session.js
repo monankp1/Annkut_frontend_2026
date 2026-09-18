@@ -64,6 +64,17 @@ export function hasMandalScope(sevak) {
 /** The mandal this person belongs to — null for sants and senior karyakars. */
 export const homeMandal = (sevak) => (sevak && sevak.mandal) || null;
 
+/**
+ * Where a signed-in sevak belongs. Used both after login and when someone
+ * lands back on the login page with a session still running, so the two can
+ * never disagree about where "in" is.
+ */
+export function landingPath(sevak) {
+  if (!sevak) return "/home";
+  if (sevak.must_change_password) return "/change-password";
+  return hasMandalScope(sevak) ? "/annkut-sevak-list" : "/home";
+}
+
 // -- parivar (family) ------------------------------------------------------
 
 /** The family, or null for a sant who belongs to none. */

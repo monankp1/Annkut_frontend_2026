@@ -8,6 +8,7 @@ import {
 } from "react-router-dom";
 import api from "./api/annkut";
 import RequireAuth from "./components/RequireAuth";
+import PublicOnly from "./components/PublicOnly";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
 import ChangePassword from "./pages/ChangePassword";
@@ -31,10 +32,27 @@ function App() {
     <div className="App">
       <Router>
         <Routes>
-          <Route path="/" element={<Login />} />
+          {/* Both bounce a signed-in visitor onward, so Back after login
+              cannot land on a login form that is no longer true. */}
+          <Route
+            path="/"
+            element={
+              <PublicOnly>
+                <Login />
+              </PublicOnly>
+            }
+          />
 
-          {/* Public: for someone who cannot sign in at all. */}
-          <Route path="/forgot-password" element={<ForgotPassword />} />
+          {/* Public: for someone who cannot sign in at all. Anyone already
+              signed in wants /change-password instead. */}
+          <Route
+            path="/forgot-password"
+            element={
+              <PublicOnly>
+                <ForgotPassword />
+              </PublicOnly>
+            }
+          />
 
           {/* Reachable while must_change_password is still set. */}
           <Route
