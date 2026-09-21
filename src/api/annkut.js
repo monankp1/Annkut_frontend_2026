@@ -211,11 +211,20 @@ class AnnkutApi {
     );
   }
 
+  /**
+   * Families in a mandal, for the Add Sevak dropdown.
+   *
+   * → { parivar: [{ id, code, members, … }], next_parivar_code }
+   *
+   * The whole response is returned rather than just the list, because
+   * `next_parivar_code` is what labels the "New parivar" option. Note it is a
+   * *preview*, never a reservation — see addSevakInNewParivar.
+   */
   parivars(mandalId) {
     return this.request(
       "sevak/get_parivar_list",
       mandalId ? { mandal_id: mandalId } : {}
-    ).then((r) => r.parivar);
+    );
   }
 
   /**
@@ -238,8 +247,22 @@ class AnnkutApi {
     return this.request("sevak/get_area_list", {}).then((r) => r.area);
   }
 
+  /** Adds into an existing family — `data.parivar_code` names which. */
   addSevak(data) {
     return this.request("sevak/add_sevak", data);
+  }
+
+  /**
+   * Adds into a brand-new family, letting the server allocate the code.
+   *
+   * `next_parivar_code` from the dropdown is a preview and must not be sent
+   * back: with two karyakars on the form at once both see the same code, and
+   * whoever saved second would be dropped into the first one's family. The
+   * flag makes the server allocate at save time instead, and the 201 response
+   * says which family they actually landed in.
+   */
+  addSevakInNewParivar(data) {
+    return this.request("sevak/add_sevak", { ...data, new_parivar: true });
   }
 
   /** `target_forms` here also moves the mandal target by the same delta. */

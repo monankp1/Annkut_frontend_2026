@@ -53,8 +53,6 @@ export default function AnnkutSevakList() {
   // A sanchalak may correct a sevak's details inside his own mandal; adding
   // and deactivating stay with the admin.
   const mayEdit = canEditSevak(me);
-  // Kept for the Add Annkut Sevak button below, which is commented out for now.
-  // eslint-disable-next-line no-unused-vars
   const mayCreate = canCreateSevak(me);
   const mayDeactivate = canDeactivateSevak(me);
   const mayResetPassword = canResetPassword(me);
@@ -301,7 +299,11 @@ export default function AnnkutSevakList() {
               />
             )}
 
-            {/* {addTargetMandal && mayCreate && (
+            {/* sevak.create is ADMIN only — a Sanchalak may edit a sevak but
+                not add one, so showing them this would only earn a 403. It
+                also needs a mandal to add into, which the grid has not picked
+                yet. */}
+            {addTargetMandal && mayCreate && (
               <Button
                 variant="outlined"
                 onClick={() => setShowAddAnnkutSevak(true)}
@@ -309,7 +311,7 @@ export default function AnnkutSevakList() {
               >
                 Add Annkut Sevak
               </Button>
-            )} */}
+            )}
 
             <Tooltip title="Refresh">
               <IconButton onClick={handleRefresh} disabled={loading}>

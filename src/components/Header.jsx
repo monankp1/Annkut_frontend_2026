@@ -14,6 +14,7 @@ import {
   getSevak,
   hasMandalScope,
   canAssignBook,
+  canManageBooks,
   postLabel,
   parivarCode,
 } from "../api/session";
@@ -30,7 +31,7 @@ function Header() {
   // permission on top — a Sant or Sah Nirdeshak has the scope but cannot issue
   // or take back anything, so the books screen would be inert for them.
   const scoped = hasMandalScope(sevak);
-  const handlesBooks = canAssignBook(sevak);
+  const handlesBooks = canAssignBook(sevak) || canManageBooks(sevak);
   const post = postLabel(sevak);
   const sevakId = sevak?.sevak_id || null;
   // The family code, shown in brackets after the title. A sant belongs to no
