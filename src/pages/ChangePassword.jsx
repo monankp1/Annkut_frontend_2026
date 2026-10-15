@@ -1,17 +1,23 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ToastContainer, toast } from "react-toastify";
-import "react-toastify/dist/ReactToastify.css";
+import { toast } from "react-toastify";
 import api, { errorText } from "../api/annkut";
-import { getSevak } from "../api/session";
+import { getSevak, landingPath } from "../api/session";
+import { PasswordInput, FieldHint, FormError } from "../components/AuthFields";
 
 const MIN_LENGTH = 6;
 
 // Changing a password now proves you know the current one, so this screen sits
 // behind the login rather than in front of it. There is no self-service reset:
 // that needs an OTP flow the backend does not have yet.
+//
+// Two ways in: forced on first sign-in (must_change_password), or by choice
+// from the header menu. Only the second gets a back arrow; the first has to
+// finish here or sign out.
 const ChangePassword = () => {
   const [loader, setLoader] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState("");
   const [form, setForm] = useState({
     current_password: "",
     new_password: "",
@@ -22,29 +28,43 @@ const ChangePassword = () => {
   const sevak = getSevak();
   const firstTime = Boolean(sevak?.must_change_password);
 
+  const lengthOk = form.new_password.length >= MIN_LENGTH;
+  const sameAsCurrent =
+    form.new_password !== "" && form.new_password === form.current_password;
+  const matches =
+    form.confirm_password !== "" &&
+    form.confirm_password === form.new_password;
+  // Judge the confirmation once it is as long as the new password, not from
+  // its first character, or it shouts "don't match" the whole time they type.
+  const showMatch =
+    submitted ||
+    (form.confirm_password !== "" &&
+      form.confirm_password.length >= form.new_password.length);
+  const newInvalid = sameAsCurrent || (submitted && !lengthOk);
+
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
+    if (error) setError("");
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setSubmitted(true);
 
-    if (form.new_password.length < MIN_LENGTH) {
-      toast.error(`New password must be at least ${MIN_LENGTH} characters.`);
-      return;
-    }
-
-    if (form.new_password !== form.confirm_password) {
-      toast.error("The two new passwords do not match.");
-      return;
-    }
-
-    if (form.new_password === form.current_password) {
-      toast.error("The new password must be different from the current one.");
+    // The problem is already spelled out under the field; just take them there.
+    const firstBad =
+      !lengthOk || sameAsCurrent
+        ? "new_password"
+        : !matches
+        ? "confirm_password"
+        : null;
+    if (firstBad) {
+      document.getElementById(firstBad)?.focus();
       return;
     }
 
     setLoader(true);
+    setError("");
 
     try {
       const res = await api.changePassword(
@@ -53,101 +73,164 @@ const ChangePassword = () => {
       );
 
       // Every token for this account is now revoked, this one included, so
-      // there is nothing to go back to but the login screen.
+      // there is nothing to go back to but the login screen. No toast
+      // container is mounted here, so react-toastify holds this until the
+      // login page's container mounts and shows it there.
       toast.success(res?.message || "Password changed. Please sign in again.");
       navigate("/", { replace: true });
     } catch (error) {
-      toast.error(errorText(error, "Could not change the password."));
+      setError(errorText(error, "Could not change the password."));
     } finally {
       setLoader(false);
     }
   };
 
-  const handleCancel = async () => {
+  // Back to wherever they opened this from. history.state.idx is React
+  // Router's position in this tab; 0 means this was the first page loaded.
+  const handleBack = () => {
+    if (window.history.state?.idx > 0) navigate(-1);
+    else navigate(landingPath(sevak), { replace: true });
+  };
+
+  const handleSignOut = async () => {
     await api.logout();
     navigate("/", { replace: true });
   };
 
   return (
-    <div className="password-container">
-      <div className="password-card">
-        <form onSubmit={handleSubmit}>
-          <h1>Change Password</h1>
-
-          {firstTime && (
-            <p style={{ fontSize: 14, marginBottom: 12 }}>
-              Please choose your own password before continuing.
-            </p>
-          )}
-
-          {sevak?.sevak_id && (
-            <p style={{ fontSize: 13, opacity: 0.75, marginBottom: 12 }}>
-              Signed in as {sevak.sevak_id}
-            </p>
-          )}
-
-          <label>Current Password:</label>
-          <input
-            type="password"
-            name="current_password"
-            onChange={handleChange}
-            value={form.current_password}
-            autoComplete="current-password"
-            required
-          />
-
-          <label>New Password:</label>
-          <input
-            type="password"
-            name="new_password"
-            onChange={handleChange}
-            value={form.new_password}
-            autoComplete="new-password"
-            minLength={MIN_LENGTH}
-            required
-          />
-
-          <label>Confirm New Password:</label>
-          <input
-            type="password"
-            name="confirm_password"
-            onChange={handleChange}
-            value={form.confirm_password}
-            autoComplete="new-password"
-            minLength={MIN_LENGTH}
-            required
-          />
-
-          <button type="submit" disabled={loader} className="password-btn">
-            {loader ? "Loading..." : "Change Password"}
+    <div className="pw-page">
+      <header className="app-bar">
+        {!firstTime && (
+          <button
+            type="button"
+            className="app-bar-back"
+            onClick={handleBack}
+            aria-label="Back"
+          >
+            <i className="bi bi-arrow-left" aria-hidden="true" />
           </button>
+        )}
+        <h1 className="app-bar-title">
+          {firstTime ? "Set your password" : "Change password"}
+        </h1>
+      </header>
 
-          <p className="back-to-login-link">
-            <button
-              type="button"
-              onClick={handleCancel}
-              className="link"
-              style={{
-                background: "none",
-                border: "none",
-                padding: 0,
-                cursor: "pointer",
-                textDecoration: "underline",
-              }}
+      <main className="pw-body">
+        {firstTime && (
+          <div className="notice-box">
+            <i className="bi bi-shield-lock-fill" aria-hidden="true" />
+            <span>
+              Please choose your own password before you continue.
+            </span>
+          </div>
+        )}
+
+        {sevak?.sevak_id && (
+          <p className="pw-meta">Signed in as {sevak.sevak_id}</p>
+        )}
+
+        <form className="auth-form" onSubmit={handleSubmit}>
+          {/* Lets Google / iCloud Keychain update the saved login for this
+              Sevak ID instead of saving a second, nameless one. */}
+          {sevak?.sevak_id && (
+            <input
+              type="text"
+              name="username"
+              autoComplete="username"
+              value={sevak.sevak_id}
+              readOnly
+              tabIndex={-1}
+              aria-hidden="true"
+              className="visually-hidden"
+            />
+          )}
+
+          <div className="auth-field">
+            <label htmlFor="current_password">Current password</label>
+            <PasswordInput
+              id="current_password"
+              name="current_password"
+              onChange={handleChange}
+              value={form.current_password}
+              autoComplete="current-password"
+              enterKeyHint="next"
+              required
+            />
+          </div>
+
+          <div className="auth-field">
+            <label htmlFor="new_password">New password</label>
+            <PasswordInput
+              id="new_password"
+              name="new_password"
+              onChange={handleChange}
+              value={form.new_password}
+              autoComplete="new-password"
+              enterKeyHint="next"
+              aria-describedby="new_password_hint"
+              aria-invalid={newInvalid}
+              required
+            />
+            <FieldHint
+              id="new_password_hint"
+              status={newInvalid ? "error" : lengthOk ? "ok" : "info"}
             >
-              Sign out
-            </button>
+              {sameAsCurrent
+                ? "Must be different from your current password"
+                : `At least ${MIN_LENGTH} characters`}
+            </FieldHint>
+          </div>
+
+          <div className="auth-field">
+            <label htmlFor="confirm_password">Confirm new password</label>
+            <PasswordInput
+              id="confirm_password"
+              name="confirm_password"
+              onChange={handleChange}
+              value={form.confirm_password}
+              autoComplete="new-password"
+              enterKeyHint="done"
+              aria-describedby="confirm_password_hint"
+              aria-invalid={showMatch && !matches}
+              required
+            />
+            {showMatch && (
+              <FieldHint
+                id="confirm_password_hint"
+                status={matches ? "ok" : "error"}
+              >
+                {matches ? "Passwords match" : "Passwords don't match"}
+              </FieldHint>
+            )}
+          </div>
+
+          <p className="pw-footnote">
+            You'll be signed out and asked to log in with your new password.
           </p>
 
-          <ToastContainer
-            position="top-center"
-            autoClose={5000}
-            closeOnClick
-            pauseOnHover
-            theme="colored"
-          />
+          <button type="submit" disabled={loader} className="brand-btn">
+            {loader ? (
+              <>
+                <span
+                  className="spinner-border spinner-border-sm"
+                  aria-hidden="true"
+                />
+                <span>Saving…</span>
+              </>
+            ) : (
+              "Change password"
+            )}
+          </button>
+
+          <FormError>{error}</FormError>
+
+          {firstTime && (
+            <button type="button" className="text-btn" onClick={handleSignOut}>
+              Sign out
+            </button>
+          )}
         </form>
-      </div>
+      </main>
     </div>
   );
 };

@@ -1,97 +1,99 @@
 // src/components/EditSevakModal.jsx
+//
+// Shares its fields and sheet with AddAnnkutSevakModal. Success is toasted
+// through the host page's container.
 import React, { useEffect, useState } from "react";
-import {
-  Button,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  FormControl,
-  InputLabel,
-  MenuItem,
-  Select,
-  Typography,
-} from "@mui/material";
-import TextField from "@mui/material/TextField";
 import { toast } from "react-toastify";
 import api, { num, errorText } from "../api/annkut";
+import { cleanPhone, isCompletePhone, PHONE_ERROR } from "../utils/phone";
+import { FormError } from "./AuthFields";
+import SevaSheet from "./seva-form/SevaSheet";
 import {
-  cleanPhone,
-  isCompletePhone,
-  phoneInputProps,
-  PHONE_ERROR,
-} from "../utils/phone";
-import { PANKH_OPTIONS } from "./AddAnnkutSevakModal";
+  SaveButton,
+  advanceOnEnter,
+  focusFirstError,
+} from "./seva-form/SevaFields";
+import {
+  NameAndMobileFields,
+  PankhPicker,
+  SEVAK_FIELD_ORDER,
+  TargetStepper,
+} from "./sevak-form/SevakFields";
 
 const asStr = (v) => (v === undefined || v === null ? "" : String(v));
 
-// The name is stored in three parts and the full_name column is rebuilt from
-// them server-side, so it is edited as three fields rather than one.
+const fromRow = (s) => ({
+  surname: asStr(s?.surname),
+  first_name: asStr(s?.first_name),
+  middle_name: asStr(s?.middle_name),
+  mobile: asStr(s?.mobile),
+  // 19 sevaks legitimately have no pankh; "" keeps it unset.
+  pankh: asStr(s?.pankh),
+  target_forms: asStr(num(s?.target_forms)),
+});
+
 export default function EditSevakModal({
   modal,
   setModal,
   sevakData = {},
   refreshData,
 }) {
-  const [formData, setFormData] = useState({
-    surname: "",
-    first_name: "",
-    middle_name: "",
-    mobile: "",
-    pankh: "",
-    target_forms: "0",
-  });
-
+  const [formData, setFormData] = useState(() => fromRow(sevakData));
   const [errors, setErrors] = useState({});
+  const [serverError, setServerError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    setFormData({
-      surname: asStr(sevakData.surname),
-      first_name: asStr(sevakData.first_name),
-      middle_name: asStr(sevakData.middle_name),
-      mobile: asStr(sevakData.mobile),
-      // 19 sevaks legitimately have no pankh; "" keeps it unset.
-      pankh: asStr(sevakData.pankh),
-      target_forms: asStr(num(sevakData.target_forms)),
-    });
+    setFormData(fromRow(sevakData));
     setErrors({});
+    setServerError("");
   }, [sevakData]);
 
-  const toggle = () => setModal(!modal);
+  const close = () => setModal(false);
 
-  const validate = (data) => {
+  const clearError = (name) => {
+    setErrors((p) => {
+      if (!p[name]) return p;
+      const { [name]: _gone, ...rest } = p;
+      return rest;
+    });
+    if (serverError) setServerError("");
+  };
+
+  const setField = (name, value) => {
+    setFormData((p) => ({ ...p, [name]: value }));
+    clearError(name);
+  };
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setField(name, name === "mobile" ? cleanPhone(value) : value);
+  };
+
+  const validate = () => {
     const next = {};
-    if (!data.first_name.trim()) next.first_name = "First name is required.";
-    if (data.mobile && !isCompletePhone(data.mobile)) {
+    if (!formData.first_name.trim())
+      next.first_name = "First name is required.";
+    if (formData.mobile && !isCompletePhone(formData.mobile)) {
       next.mobile = PHONE_ERROR;
-    }
-    if (!/^\d*$/.test(data.target_forms)) {
-      next.target_forms = "Digits only.";
     }
     return next;
   };
 
-  const handleChange = (e) => {
-    const { name } = e.target;
-    let { value } = e.target;
+  const handleSubmit = async (e) => {
+    e.preventDefault();
 
-    if (name === "mobile") value = cleanPhone(value);
-    if (name === "target_forms") value = asStr(value).replace(/\D/g, "");
-
-    const next = { ...formData, [name]: value };
-    setFormData(next);
-    setErrors(validate(next));
-  };
-
-  const handleSubmit = async () => {
-    const found = validate(formData);
+    // Checked on Save, not while typing, and Save is never greyed out: a
+    // problem in a field scrolled out of view would otherwise be a mystery.
+    const found = validate();
     if (Object.keys(found).length > 0) {
       setErrors(found);
+      focusFirstError(found, SEVAK_FIELD_ORDER);
       return;
     }
 
     setSubmitting(true);
+    setServerError("");
 
     try {
       // target_forms goes along with the rest: edit_sevak forwards it to
@@ -106,124 +108,74 @@ export default function EditSevakModal({
       });
 
       toast.success(res?.message || "Sevak updated successfully.");
-      toggle();
+      close();
       if (typeof refreshData === "function") await refreshData();
     } catch (error) {
       console.error("Error editing sevak:", error);
-      toast.error(errorText(error, "Could not update that sevak."));
+      setServerError(errorText(error, "Could not update that sevak."));
     } finally {
       setSubmitting(false);
     }
   };
 
-  const invalid = Object.keys(errors).length > 0;
+  const dirty = JSON.stringify(formData) !== JSON.stringify(fromRow(sevakData));
+
+  const about = [
+    sevakData?.sevak_code,
+    sevakData?.mandal_name,
+    sevakData?.parivar_code ? `Parivar ${sevakData.parivar_code}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
-    <Dialog open={modal} onClose={toggle} fullWidth maxWidth="sm">
-      <DialogTitle>Edit Sevak Details</DialogTitle>
-      <DialogContent>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-          {sevakData?.sevak_code}
-          {sevakData?.mandal_name ? ` · ${sevakData.mandal_name}` : ""}
-          {sevakData?.parivar_code ? ` · Parivar ${sevakData.parivar_code}` : ""}
-        </Typography>
+    <SevaSheet
+      open={modal}
+      title="Edit sevak"
+      dirty={dirty}
+      busy={submitting}
+      discardTitle="Discard changes?"
+      discardText="Your changes to this sevak will be lost."
+      onClose={close}
+      footer={
+        <>
+          <FormError>{serverError}</FormError>
+          <SaveButton busy={submitting} form="sevak-form">
+            Save changes
+          </SaveButton>
+        </>
+      }
+    >
+      <div className="receipt-info mt-0 mb-3">
+        <i className="bi bi-person" aria-hidden="true" />
+        <span>{about || "—"}</span>
+      </div>
 
-        <TextField
-          fullWidth
-          margin="normal"
-          label="Surname"
-          name="surname"
-          value={formData.surname}
+      <form
+        id="sevak-form"
+        className="auth-form"
+        onSubmit={handleSubmit}
+        onKeyDown={advanceOnEnter}
+        noValidate
+      >
+        <NameAndMobileFields
+          form={formData}
+          errors={errors}
           onChange={handleChange}
         />
 
-        <TextField
-          fullWidth
-          margin="normal"
-          label="First Name"
-          name="first_name"
-          value={formData.first_name}
-          onChange={handleChange}
-          error={Boolean(errors.first_name)}
-          helperText={errors.first_name || ""}
+        <PankhPicker
+          value={formData.pankh}
+          onChange={(code) => setField("pankh", code)}
+          allowNone
         />
 
-        <TextField
-          fullWidth
-          margin="normal"
-          label="Father's / Husband's Name"
-          name="middle_name"
-          value={formData.middle_name}
-          onChange={handleChange}
-        />
-
-        <TextField
-          fullWidth
-          margin="normal"
-          label="Mobile"
-          name="mobile"
-          type="text"
-          value={formData.mobile}
-          onChange={handleChange}
-          error={Boolean(errors.mobile)}
-          helperText={errors.mobile || "10 digits"}
-          inputProps={phoneInputProps}
-        />
-
-        <FormControl fullWidth margin="normal" size="small">
-          <InputLabel id="edit-pankh-label">Pankh</InputLabel>
-          <Select
-            labelId="edit-pankh-label"
-            label="Pankh"
-            name="pankh"
-            value={formData.pankh}
-            onChange={handleChange}
-          >
-            <MenuItem value="">
-              <em>Not set</em>
-            </MenuItem>
-            {PANKH_OPTIONS.map((p) => (
-              <MenuItem key={p.code} value={p.code}>
-                {p.label}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-
-        <TextField
-          fullWidth
-          margin="normal"
-          label="Target"
-          name="target_forms"
-          type="text"
-          inputMode="numeric"
+        <TargetStepper
           value={formData.target_forms}
-          onChange={handleChange}
-          error={Boolean(errors.target_forms)}
-          helperText={
-            errors.target_forms ||
-            "Also moves the mandal target by the same amount."
-          }
+          onChange={(v) => setField("target_forms", v)}
+          error={errors.target_forms}
         />
-      </DialogContent>
-      <DialogActions>
-        <Button
-          variant="contained"
-          color="secondary"
-          onClick={handleSubmit}
-          disabled={invalid || submitting}
-        >
-          {submitting ? "Saving..." : "Save Changes"}
-        </Button>
-        <Button
-          variant="contained"
-          color="error"
-          onClick={toggle}
-          disabled={submitting}
-        >
-          Cancel
-        </Button>
-      </DialogActions>
-    </Dialog>
+      </form>
+    </SevaSheet>
   );
 }

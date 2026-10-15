@@ -5,72 +5,133 @@
 // organisation, so one number is one book — no mandal to pick first.
 //
 // Entries are listed in page order rather than date order, because this screen
-// is used with the physical book open alongside it.
+// is used with the physical book open alongside it. The book looked up lives
+// in the URL (?book=12), so the back gesture steps through earlier lookups and
+// a reload — or coming back from an edit — keeps it on screen.
 import React from "react";
-import {
-  Alert,
-  Box,
-  Button,
-  Chip,
-  IconButton,
-  Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  TextField,
-  Tooltip,
-  Typography,
-} from "@mui/material";
+import { useSearchParams } from "react-router-dom";
+import { IconButton } from "@mui/material";
 import { ToastContainer } from "react-toastify";
 import Header from "../components/Header";
 import EditSevaModal from "../components/EditSevaModal";
+import {
+  StatusPill,
+  UsageBar,
+  formatDate,
+} from "../components/receipt-books/BookList";
 import api, { num, errorText } from "../api/annkut";
 
 const money = new Intl.NumberFormat("en-IN");
 
+// The last few books looked up, on this phone only. Storage can be missing or
+// refuse (private mode), and the screen works the same without it.
+const RECENT_KEY = "annkut.recentBooks";
+const RECENT_MAX = 5;
+
+const readRecent = () => {
+  try {
+    const list = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
+    return Array.isArray(list) ? list.slice(0, RECENT_MAX) : [];
+  } catch {
+    return [];
+  }
+};
+
+const rememberRecent = (no) => {
+  const next = [no, ...readRecent().filter((x) => x !== no)].slice(
+    0,
+    RECENT_MAX,
+  );
+  try {
+    localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+  } catch {
+    /* not remembered — no harm done */
+  }
+  return next;
+};
+
+const SkeletonCards = () => (
+  <div aria-busy="true" aria-label="Looking up the book">
+    {[0, 1, 2].map((i) => (
+      <div key={i} className="seva-card is-skeleton" aria-hidden="true">
+        <span className="skeleton-line sk-60" />
+        <span className="skeleton-line sk-40" />
+        <span className="skeleton-line sk-50" />
+      </div>
+    ))}
+  </div>
+);
+
 export default function BookLookup() {
-  const [bookNo, setBookNo] = React.useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const current = searchParams.get("book") || "";
+
+  const [bookNo, setBookNo] = React.useState(current);
   const [result, setResult] = React.useState(null);
   const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState("");
-  const [searched, setSearched] = React.useState("");
+  const [error, setError] = React.useState(null);
+  const [recent, setRecent] = React.useState(readRecent);
 
-  const [editModal, setEditModal] = React.useState(false);
-  const [selectedSeva, setSelectedSeva] = React.useState(null);
+  const [editRow, setEditRow] = React.useState(null);
+
+  const request = React.useRef(0);
 
   const search = React.useCallback(async (no) => {
     const term = String(no ?? "").trim();
     if (!term) return;
 
+    const id = ++request.current;
     setLoading(true);
-    setError("");
+    setError(null);
 
     try {
       const res = await api.lookupBook(term);
+      if (id !== request.current) return;
       setResult(res);
-      setSearched(term);
+      setRecent(rememberRecent(term));
     } catch (e) {
+      if (id !== request.current) return;
       setResult(null);
-      setSearched(term);
       // 404 "no such number" and 403 "not your mandal" carry different
       // messages on purpose — show whichever the server sent.
-      setError(errorText(e, "Could not look that book up."));
+      setError({
+        title:
+          e?.status === 404
+            ? `No book with number ${term}`
+            : e?.isForbidden
+              ? "This book isn't in your scope"
+              : "Couldn't look that book up",
+        message: errorText(e, "Could not look that book up."),
+        retry: !e?.status || e.status >= 500 || e.isNetwork,
+      });
     } finally {
-      setLoading(false);
+      if (id === request.current) setLoading(false);
     }
   }, []);
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    search(bookNo);
+  // The URL is the source of truth: typing a number and pressing Search
+  // writes it there, and this follows.
+  React.useEffect(() => {
+    setBookNo(current);
+    if (current) search(current);
+    else {
+      request.current += 1;
+      setResult(null);
+      setError(null);
+      setLoading(false);
+    }
+  }, [current, search]);
+
+  const lookUp = (no) => {
+    const term = String(no ?? "").trim();
+    if (!term) return;
+    if (term === current) search(term);
+    else setSearchParams({ book: term });
   };
 
-  const handleEdit = (row) => {
-    setSelectedSeva(row);
-    setEditModal(true);
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    lookUp(bookNo);
   };
 
   const book = result?.book;
@@ -78,185 +139,221 @@ export default function BookLookup() {
   const summary = result?.summary;
   const canEdit = Boolean(result?.can_edit);
 
+  // Prasad goes by amount: one box for ₹500, another for ₹1,000 and up.
+  const forms500 = receipts.filter((r) => num(r.seva_amount) === 500).length;
+  const forms1000 = receipts.length - forms500;
+
+  let content;
+
+  if (loading) {
+    content = <SkeletonCards />;
+  } else if (error) {
+    content = (
+      <div className="list-state" role="alert">
+        <i className="bi bi-journal-x list-state-icon" aria-hidden="true" />
+        <p className="list-state-title">{error.title}</p>
+        <p className="list-state-text">{error.message}</p>
+        {error.retry && (
+          <button
+            type="button"
+            className="outline-btn"
+            onClick={() => search(current)}
+          >
+            <i className="bi bi-arrow-clockwise" aria-hidden="true" /> Retry
+          </button>
+        )}
+      </div>
+    );
+  } else if (!book) {
+    content = (
+      <div className="list-state">
+        <i className="bi bi-journal-text list-state-icon" aria-hidden="true" />
+        <p className="list-state-title">Find a receipt book</p>
+        <p className="list-state-text">
+          Enter the number printed on the book's cover.
+        </p>
+      </div>
+    );
+  } else {
+    const filled = num(summary?.filled);
+    const pages = num(summary?.pages);
+
+    content = (
+      <>
+        <section className="progress-card" aria-label={`Book ${book.book_no}`}>
+          <div className="seva-card-top book-summary-top">
+            <span className="book-summary-title">Book {book.book_no}</span>
+            <StatusPill row={book} />
+          </div>
+          <div className="seva-card-meta">
+            {[book.mandal_name, book.area_name || book.area_code]
+              .filter(Boolean)
+              .join(" · ")}
+          </div>
+          <div className="seva-card-meta">
+            Receipts {num(book.start_no)}–{num(book.end_no)}
+          </div>
+          <UsageBar row={{ ...book, remaining: summary?.remaining }} />
+          <div className="book-summary-stats">
+            <span>
+              <strong>{filled}</strong> of {pages} filled
+            </span>
+            <span>
+              <strong>{num(summary?.remaining)}</strong> left
+            </span>
+            <span>
+              <strong>₹{money.format(num(summary?.collected_amount))}</strong>
+            </span>
+          </div>
+          {filled > 0 && (
+            <div className="split-pills mt-2">
+              <span
+                className={`split-pill is-500${forms500 ? "" : " is-zero"}`}
+                aria-label={`₹500 forms: ${forms500}`}
+              >
+                ₹500 <strong>{forms500}</strong>
+              </span>
+              <span
+                className={`split-pill is-1000${forms1000 ? "" : " is-zero"}`}
+                aria-label={`₹1,000 and above forms: ${forms1000}`}
+              >
+                ₹1,000+ <strong>{forms1000}</strong>
+              </span>
+            </div>
+          )}
+        </section>
+
+        {/* Pages below the high-water mark with nothing against them: torn
+            out, spoiled or voided. The thing you are looking for when
+            reconciling a returned book. */}
+        {summary?.unused_numbers?.length > 0 && (
+          <div className="notice-box">
+            <i className="bi bi-exclamation-triangle-fill" aria-hidden="true" />
+            <span>
+              No entry for receipt
+              {summary.unused_numbers.length === 1 ? "" : "s"}{" "}
+              <strong>{summary.unused_numbers.join(", ")}</strong> — torn out,
+              spoiled or voided.
+            </span>
+          </div>
+        )}
+
+        <h2 className="section-title">Receipts ({receipts.length})</h2>
+
+        {receipts.length === 0 ? (
+          <div className="list-state">
+            <i className="bi bi-journal list-state-icon" aria-hidden="true" />
+            <p className="list-state-title">Nothing written in this book yet</p>
+          </div>
+        ) : (
+          <ul className="seva-list">
+            {receipts.map((row) => {
+              const by = [
+                row.collected_by_name,
+                row.collected_by_code,
+                formatDate(row.collected_at),
+              ]
+                .filter(Boolean)
+                .join(" · ");
+              return (
+                <li key={row.id} className="seva-card">
+                  <div className="seva-card-top">
+                    <span className="receipt-no">#{row.receipt_no}</span>
+                    <span
+                      className={`receipt-card-right${
+                        canEdit ? " has-action" : ""
+                      }`}
+                    >
+                      <span className="seva-card-amount">
+                        ₹{money.format(num(row.seva_amount))}
+                      </span>
+                      {canEdit && (
+                        <IconButton
+                          className="seva-card-more"
+                          onClick={() => setEditRow(row)}
+                          aria-label={`Edit receipt ${row.receipt_no}`}
+                        >
+                          <i className="bi bi-pencil-fill" aria-hidden="true" />
+                        </IconButton>
+                      )}
+                    </span>
+                  </div>
+                  <div className="seva-card-name">
+                    {row.sahyogi_name || "—"}
+                  </div>
+                  {row.sahyogi_number && (
+                    <a
+                      className="seva-card-phone"
+                      href={`tel:${row.sahyogi_number}`}
+                    >
+                      <i className="bi bi-telephone" aria-hidden="true" />
+                      {row.sahyogi_number}
+                    </a>
+                  )}
+                  {by && <div className="seva-card-meta">By {by}</div>}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </>
+    );
+  }
+
   return (
-    <>
+    <div className="list-page">
       <Header />
 
-      <Box p={2}>
-        <Typography variant="h5" mb={2}>
-          Find a Receipt Book
-        </Typography>
-
-        <Box
-          component="form"
-          onSubmit={handleSubmit}
-          display="flex"
-          gap={1}
-          mb={3}
-        >
-          <TextField
-            size="small"
-            label="Book number"
-            value={bookNo}
-            onChange={(e) => setBookNo(e.target.value.replace(/\D/g, ""))}
-            inputProps={{ inputMode: "numeric" }}
-            sx={{ width: 240 }}
-            autoFocus
-          />
-          <Button
+      <div className="list-toolbar">
+        <form className="list-toolbar-row" onSubmit={handleSubmit}>
+          <div className="search-field">
+            <i className="bi bi-journal-bookmark" aria-hidden="true" />
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={bookNo}
+              onChange={(e) => setBookNo(e.target.value.replace(/\D/g, ""))}
+              placeholder="Book number"
+              aria-label="Book number"
+              autoComplete="off"
+              enterKeyHint="search"
+              autoFocus={!current}
+            />
+          </div>
+          <button
             type="submit"
-            variant="contained"
+            className="toolbar-btn"
             disabled={loading || !bookNo.trim()}
           >
-            {loading ? "Searching..." : "Search"}
-          </Button>
-        </Box>
+            Search
+          </button>
+        </form>
 
-        {error && (
-          <Alert severity="warning" sx={{ mb: 2 }}>
-            {error}
-          </Alert>
-        )}
-
-        {book && (
-          <>
-            <Paper sx={{ p: 2, mb: 2 }}>
-              <Box
-                display="flex"
-                alignItems="center"
-                gap={1}
-                flexWrap="wrap"
-                mb={1}
+        {recent.length > 0 && (
+          <div className="chip-row" aria-label="Recent books">
+            {recent.map((no) => (
+              <button
+                key={no}
+                type="button"
+                className={`filter-chip${no === current ? " is-active" : ""}`}
+                onClick={() => lookUp(no)}
               >
-                <Typography variant="h6">Book {book.book_no}</Typography>
-                <Chip
-                  size="small"
-                  label={`${book.mandal_name} · ${book.area_code}`}
-                />
-                {book.parivar_code ? (
-                  <Chip
-                    size="small"
-                    color="primary"
-                    label={`Parivar: ${book.parivar_code}`}
-                  />
-                ) : (
-                  <Chip size="small" variant="outlined" label="Not issued" />
-                )}
-                <Chip
-                  size="small"
-                  variant="outlined"
-                  label={`Receipts ${num(book.start_no)}–${num(book.end_no)}`}
-                />
-              </Box>
-
-              <Box display="flex" gap={3} flexWrap="wrap">
-                <Typography variant="body2">
-                  Filled: <strong>{num(summary?.filled)}</strong> of{" "}
-                  {num(summary?.pages)}
-                </Typography>
-                <Typography variant="body2">
-                  Remaining: <strong>{num(summary?.remaining)}</strong>
-                </Typography>
-                <Typography variant="body2">
-                  Collected:{" "}
-                  <strong>
-                    ₹{money.format(num(summary?.collected_amount))}
-                  </strong>
-                </Typography>
-              </Box>
-
-              {/* Pages below the high-water mark with nothing against them:
-                  torn out, spoiled or voided. The thing you are looking for
-                  when reconciling a returned book. */}
-              {summary?.unused_numbers?.length > 0 && (
-                <Alert severity="warning" sx={{ mt: 2 }}>
-                  No entry recorded against receipt{" "}
-                  {summary.unused_numbers.length === 1 ? "" : "numbers"}{" "}
-                  <strong>{summary.unused_numbers.join(", ")}</strong> — torn
-                  out, spoiled or voided.
-                </Alert>
-              )}
-            </Paper>
-
-            <TableContainer component={Paper}>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Receipt</TableCell>
-                    <TableCell>Sahyogi</TableCell>
-                    <TableCell>Phone</TableCell>
-                    <TableCell>Amount</TableCell>
-                    <TableCell>Collected by</TableCell>
-                    <TableCell>Date</TableCell>
-                    {canEdit && <TableCell>Actions</TableCell>}
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {receipts.map((row) => (
-                    <TableRow key={row.id} hover>
-                      <TableCell>{row.receipt_no}</TableCell>
-                      <TableCell>{row.sahyogi_name || "—"}</TableCell>
-                      <TableCell>{row.sahyogi_number || "—"}</TableCell>
-                      <TableCell>
-                        ₹{money.format(num(row.seva_amount))}
-                      </TableCell>
-                      <TableCell>
-                        {row.collected_by_name}
-                        <Typography variant="caption" display="block">
-                          {row.collected_by_code}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        {row.collected_at
-                          ? new Date(row.collected_at).toLocaleDateString()
-                          : "—"}
-                      </TableCell>
-                      {canEdit && (
-                        <TableCell>
-                          <Tooltip title="Edit this entry">
-                            <IconButton
-                              color="warning"
-                              size="small"
-                              onClick={() => handleEdit(row)}
-                            >
-                              <i className="bi fs-6 bi-pencil"></i>
-                            </IconButton>
-                          </Tooltip>
-                        </TableCell>
-                      )}
-                    </TableRow>
-                  ))}
-
-                  {receipts.length === 0 && (
-                    <TableRow>
-                      <TableCell
-                        colSpan={canEdit ? 7 : 6}
-                        align="center"
-                        sx={{ py: 4, color: "text.secondary" }}
-                      >
-                        Nothing has been written in this book yet.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </>
+                <i className="bi bi-clock-history" aria-hidden="true" /> {no}
+              </button>
+            ))}
+          </div>
         )}
+      </div>
 
-        {!book && !error && !loading && searched === "" && (
-          <Typography variant="body2" color="text.secondary">
-            Enter the number printed on the book's cover.
-          </Typography>
-        )}
-      </Box>
+      <main className="list-body">{content}</main>
 
-      {editModal && (
+      {editRow && (
         <EditSevaModal
-          modal={editModal}
-          setModal={setEditModal}
-          sevakData={selectedSeva}
-          refreshData={() => search(searched)}
+          modal={Boolean(editRow)}
+          setModal={(open) => !open && setEditRow(null)}
+          sevakData={editRow}
+          refreshData={() => search(current)}
         />
       )}
 
@@ -267,6 +364,6 @@ export default function BookLookup() {
         pauseOnHover
         theme="colored"
       />
-    </>
+    </div>
   );
 }

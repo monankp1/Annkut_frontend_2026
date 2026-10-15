@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Header from "../components/Header";
-import ListingTable from "../components/ListingTable";
+import SevaList from "../components/SevaList";
 import AddSevaModal from "../components/AddSevaModal";
 import api, { num, errorText } from "../api/annkut";
 import {
@@ -9,10 +9,7 @@ import {
   parivarMembers,
   canManageSeva,
 } from "../api/session";
-import { Button } from "reactstrap";
 import { toast, ToastContainer } from "react-toastify";
-import { ProgressBar } from "react-bootstrap";
-import { Alert, Box, Chip } from "@mui/material";
 
 // The household's screen, not just one person's.
 //
@@ -20,6 +17,9 @@ import { Alert, Box, Chip } from "@mui/material";
 // decides both whose entries are listed and who a new seva is credited to, so
 // whoever is holding the phone can enter forms for everyone — and each of them
 // sees those entries under their own name when they sign in.
+//
+// Order on screen follows that: member tabs, then that member's progress,
+// then their entries, with Add seva pinned to the bottom.
 const Home = () => {
   const me = getSevak();
   const canManage = canManageSeva(me);
@@ -35,6 +35,7 @@ const Home = () => {
   const [showAddSeva, setShowAddSeva] = useState(false);
   const [sevaList, setSevaList] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   const selected = useMemo(
     () => members.find((m) => m.sevak_code === selectedCode) || null,
@@ -43,17 +44,21 @@ const Home = () => {
 
   // A sant has no parivar and so no tabs — they just see their own entries.
   const onOwnTab = !selected || selected.is_self;
+  const selectedName = selected?.first_name || selected?.full_name || "";
 
   const fetchSeva = useCallback(async (code) => {
     if (!code) return;
     setLoading(true);
+    setLoadError("");
     try {
       const res = await api.sevaFor(code);
       setSevaList(Array.isArray(res?.seva) ? res.seva : []);
     } catch (error) {
       console.error("Error fetching seva:", error);
       setSevaList([]);
-      toast.error(errorText(error, "Could not load the seva list."));
+      // Shown in place of the list with a Retry button, not as a toast that
+      // is gone while the list stays blank.
+      setLoadError(errorText(error, "Could not load the seva list."));
     } finally {
       setLoading(false);
     }
@@ -106,116 +111,144 @@ const Home = () => {
   const filled = selected ? num(selected.filled_forms) : sevaList.length;
   const progress = target > 0 ? (filled / target) * 100 : 0;
   const progressClamped = Math.max(0, Math.min(100, Math.round(progress)));
+  const remaining = Math.max(0, target - filled);
+  const achieved = target > 0 && filled >= target;
+
+  // Summed from the entries already on screen; no extra request.
+  const collected = useMemo(
+    () => sevaList.reduce((sum, s) => sum + num(s?.seva_amount), 0),
+    [sevaList]
+  );
+  const currency = useMemo(() => new Intl.NumberFormat("en-IN"), []);
 
   return (
-    <div>
+    <div className="home-page">
       <Header />
-
-      <div
-        style={{
-          display: "flex",
-          textAlign: "left",
-          fontFamily: "system-ui",
-          justifyContent: "space-around",
-        }}
-      >
-        <div style={{ width: "100%", padding: "10px", fontWeight: 600 }}>
-          <h6 style={{ fontWeight: 600 }}>Achieved Target</h6>
-          <ProgressBar
-            now={progressClamped}
-            label={`${progressClamped}%`}
-            className="custom-progress-bar"
-          />
-        </div>
-      </div>
-
-      <div
-        style={{
-          display: "flex",
-          textAlign: "left",
-          fontFamily: "system-ui",
-          margin: "0 12px",
-          justifyContent: "space-between",
-        }}
-      >
-        <div>
-          <h6>Target : {target}</h6>
-          <h6>Filled form : {filled}</h6>
-        </div>
-      </div>
 
       {/* Family tabs — one per member, however many the family has. */}
       {members.length > 1 && (
-        <Box
-          sx={{
-            display: "flex",
-            gap: 1,
-            flexWrap: "wrap",
-            m: "12px",
-          }}
-        >
+        <div className="member-tabs" role="tablist" aria-label="Family members">
           {members.map((m) => {
             const active = m.sevak_code === selectedCode;
+            const name = m.first_name || m.full_name || m.sevak_code;
             return (
-              <Button
+              <button
                 key={m.sevak_code}
-                color={active ? "primary" : "secondary"}
-                outline={!active}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                className={`member-pill${active ? " is-active" : ""}`}
                 onClick={() => setSelectedCode(m.sevak_code)}
-                style={{
-                  textAlign: "left",
-                  lineHeight: 1.25,
-                  padding: "10px 14px",
-                  minWidth: 150,
-                }}
               >
-                <div style={{ fontWeight: 700 }}>
-                  {m.first_name || m.full_name}
-                  {m.is_self ? " (You)" : ""}
-                </div>
-                <div style={{ fontSize: 12, opacity: 0.85 }}>
-                  {m.sevak_code} · {num(m.filled_forms)}/{num(m.target_forms)}
-                </div>
-              </Button>
+                <span className="member-avatar" aria-hidden="true">
+                  {name.trim().charAt(0)}
+                </span>
+                <span className="member-pill-text">
+                  <span className="member-pill-name">
+                    {name}
+                    {m.is_self ? " · You" : ""}
+                  </span>
+                  <span className="member-pill-count">
+                    {num(m.filled_forms)}/{num(m.target_forms)}
+                  </span>
+                </span>
+              </button>
             );
           })}
-        </Box>
-      )}
-
-      {target === 0 && (
-        <div style={{ margin: "8px 12px" }}>
-          <Alert severity="info">
-            {onOwnTab
-              ? "તમારું અન્નકુટ ફોર્મ લક્ષ્ય હજુ સેટ થયું નથી. તમે સેવા ઉમેરી શકો છો — લક્ષ્ય માટે તમારા સંચાલકનો સંપર્ક કરો."
-              : `${selected?.full_name} નું લક્ષ્ય હજુ સેટ થયું નથી.`}
-          </Alert>
         </div>
       )}
 
-      <div style={{ margin: "0 12px" }}>
-        <Box display="flex" alignItems="center" gap={1} flexWrap="wrap" mb={1}>
-          <Button color="primary" outline onClick={() => setShowAddSeva(true)}>
-            Add Seva
-          </Button>
-
-          {/* Adding while another member's tab is open credits it to them, so
-              say whose name it will go under. */}
-          {!onOwnTab && selected && (
-            <Chip
-              size="small"
-              color="warning"
-              label={`Adding for ${selected.full_name}`}
-            />
+      <main className="home-body">
+        <section
+          className={`progress-card${achieved ? " is-achieved" : ""}`}
+          aria-label="Progress"
+        >
+          {target > 0 ? (
+            <>
+              <div className="progress-card-head">
+                <span className="progress-card-count">
+                  <strong>{filled}</strong> of {target} forms
+                </span>
+                <span className="progress-card-pct">{progressClamped}%</span>
+              </div>
+              <div
+                className="progress-track"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={progressClamped}
+                aria-label="Target achieved"
+              >
+                <div
+                  className="progress-fill"
+                  style={{ width: `${progressClamped}%` }}
+                />
+              </div>
+              <div className="progress-card-foot">
+                {achieved ? "Target achieved 🎉" : `${remaining} to go`}
+                {collected > 0 && ` · ₹${currency.format(collected)} collected`}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="progress-card-head">
+                <span className="progress-card-count">
+                  <strong>{filled}</strong> {filled === 1 ? "form" : "forms"}{" "}
+                  filled
+                </span>
+              </div>
+              {collected > 0 && (
+                <div className="progress-card-foot">
+                  ₹{currency.format(collected)} collected
+                </div>
+              )}
+              <div className="notice-box mt-3 mb-0">
+                <i className="bi bi-info-circle-fill" aria-hidden="true" />
+                <span>
+                  {onOwnTab
+                    ? "તમારું અન્નકુટ ફોર્મ લક્ષ્ય હજુ સેટ થયું નથી. તમે સેવા ઉમેરી શકો છો — લક્ષ્ય માટે તમારા સંચાલકનો સંપર્ક કરો."
+                    : `${selected?.full_name} નું લક્ષ્ય હજુ સેટ થયું નથી.`}
+                </span>
+              </div>
+            </>
           )}
-        </Box>
+        </section>
 
-        <ListingTable
+        <h2 className="section-title">
+          Seva entries
+          {!loading && !loadError && ` (${sevaList.length})`}
+        </h2>
+
+        <SevaList
           data={sevaList}
           loading={loading}
+          error={loadError}
+          onRetry={() => fetchSeva(selectedCode)}
+          emptyText={
+            onOwnTab
+              ? "No seva entries yet"
+              : `No seva entries for ${selectedName} yet`
+          }
           canManage={canManage}
           handleDelete={handleDelete}
           refreshData={handleAdded}
         />
+      </main>
+
+      {/* Pinned so the main action is always in thumb reach. Adding while
+          another member's tab is open credits it to them, so the label says
+          whose name it will go under. */}
+      <div className="bottom-action">
+        <button
+          type="button"
+          className="brand-btn"
+          onClick={() => setShowAddSeva(true)}
+        >
+          <i className="bi bi-plus-lg" aria-hidden="true" />
+          <span>
+            {onOwnTab ? "Add seva" : `Add seva for ${selectedName}`}
+          </span>
+        </button>
       </div>
 
       {showAddSeva && (

@@ -14,7 +14,6 @@ import Login from "./pages/Login";
 import ChangePassword from "./pages/ChangePassword";
 import ForgotPassword from "./pages/ForgotPassword";
 import AnnkutSevakList from "./pages/AnnkutSevakList";
-import MandalSevakList from "./pages/MandalSevakList";
 import ReceiptBooks from "./pages/ReceiptBooks";
 import BookLookup from "./pages/BookLookup";
 
@@ -93,14 +92,6 @@ function App() {
             element={
               <RequireAuth>
                 <BookLookup />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/mandal-sevak-list"
-            element={
-              <RequireAuth>
-                <MandalSevakList />
               </RequireAuth>
             }
           />

@@ -1,26 +1,25 @@
+// src/components/receipt-books/DeassignBookModal.jsx
+//
+// Takes a book back from a family so it can go to the next one. Admin and the
+// mandal's own Sanchalak.
+//
+// `last_used_no` is the last receipt the family actually wrote, and it carries
+// over: hand a book back at 7 and the next parivar starts at 8, not 1. It only
+// ever moves forward — the server knows the highest receipt already written and
+// answers 422 for anything lower, so that is the floor here too.
 import React from "react";
 import {
-  Alert,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Typography,
-  TextField,
   Button,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
 } from "@mui/material";
 import { toast } from "react-toastify";
 import api, { num, errorText } from "../../api/annkut";
+import { FieldHint, FormError } from "../AuthFields";
 
-/**
- * Takes a book back from a family so it can go to the next one. Admin and the
- * mandal's own Sanchalak.
- *
- * `last_used_no` is how many receipts the family actually wrote, and it
- * carries over: hand a book back at 7 and the next parivar starts at 8, not 1.
- * It only ever moves forward — the server knows the highest receipt already
- * written and answers 422 for anything lower, so that is the floor here too.
- */
 const DeassignBookModal = ({ open, onClose, book, onDeassigned }) => {
   const recorded = num(book?.last_used_no);
   const endNo = num(book?.end_no) || 50;
@@ -37,81 +36,132 @@ const DeassignBookModal = ({ open, onClose, book, onDeassigned }) => {
     }
   }, [open, recorded]);
 
-  const validate = (val) => {
-    if (val === "") return "";
-    const n = Number(val);
-    if (!Number.isInteger(n) || n < recorded || n > endNo) {
-      return `Enter a number between ${recorded} and ${endNo}.`;
-    }
-    return "";
+  const n = Number(lastUsedNo || 0);
+  const outOfRange =
+    lastUsedNo !== "" && (!Number.isInteger(n) || n < recorded || n > endNo);
+
+  const set = (v) => {
+    setLastUsedNo(String(Math.min(endNo, Math.max(recorded, v))));
+    setError("");
   };
 
-  const submit = async () => {
-    const vErr = validate(lastUsedNo);
-    if (vErr) {
-      setError(vErr);
+  const submit = async (e) => {
+    e.preventDefault();
+    if (outOfRange) {
+      document.getElementById("last_used_no")?.focus();
       return;
     }
 
     try {
       setSubmitting(true);
+      setError("");
       const res = await api.deassignBook(num(book?.id), lastUsedNo);
       toast.success(res?.message || "Receipt book taken back.");
       onClose?.();
       onDeassigned?.();
-    } catch (e) {
+    } catch (err) {
       // 422 when the number is below what is already recorded — the server
       // message names the floor, so show it rather than swallowing it.
-      toast.error(errorText(e, "Failed to take the book back."));
+      setError(errorText(err, "Failed to take the book back."));
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
+    <Dialog
+      open={open}
+      onClose={() => !submitting && onClose?.()}
+      PaperProps={{ className: "app-dialog" }}
+    >
       <DialogTitle>Take back book {book?.book_no}?</DialogTitle>
       <DialogContent>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        <p className="dialog-subtitle">
           Currently with parivar <strong>{holder}</strong>.
-        </Typography>
+        </p>
 
-        <TextField
-          fullWidth
-          label="Receipts used so far"
-          inputMode="numeric"
-          margin="dense"
-          value={lastUsedNo}
-          onChange={(e) => {
-            const v = e.target.value.replace(/\D/g, "");
-            setLastUsedNo(v);
-            setError(validate(v));
-          }}
-          helperText={
-            error ||
-            `Between ${recorded} and ${endNo}. The next family continues from ${
-              num(lastUsedNo) + 1
-            }.`
-          }
-          error={Boolean(error)}
-        />
+        <form
+          id="deassign-form"
+          className="auth-form"
+          onSubmit={submit}
+          noValidate
+        >
+          <div className="auth-field">
+            <label htmlFor="last_used_no">Last receipt used</label>
+            <div className="stepper">
+              <button
+                type="button"
+                className="stepper-btn"
+                onClick={() => set(n - 1)}
+                disabled={n <= recorded}
+                aria-label="One less"
+              >
+                <i className="bi bi-dash-lg" aria-hidden="true" />
+              </button>
+              <input
+                id="last_used_no"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                autoComplete="off"
+                enterKeyHint="done"
+                value={lastUsedNo}
+                onChange={(e) => {
+                  setLastUsedNo(e.target.value.replace(/\D/g, ""));
+                  setError("");
+                }}
+                aria-invalid={outOfRange}
+                aria-describedby="last_used_no_hint"
+              />
+              <button
+                type="button"
+                className="stepper-btn"
+                onClick={() => set(n + 1)}
+                disabled={n >= endNo}
+                aria-label="One more"
+              >
+                <i className="bi bi-plus-lg" aria-hidden="true" />
+              </button>
+            </div>
+            <FieldHint
+              id="last_used_no_hint"
+              status={outOfRange ? "error" : "info"}
+            >
+              {outOfRange
+                ? `Enter a number between ${recorded} and ${endNo}.`
+                : `Between ${recorded} and ${endNo}. The next family continues from ${
+                    n + 1
+                  }.`}
+            </FieldHint>
+          </div>
 
-        <Alert severity="warning" sx={{ mt: 2 }}>
-          {holder} will not be able to add any more seva in this book.
-        </Alert>
+          <div className="notice-box mb-0">
+            <i className="bi bi-exclamation-triangle-fill" aria-hidden="true" />
+            <span>
+              {holder} won't be able to add any more seva in this book.
+            </span>
+          </div>
+
+          <FormError>{error}</FormError>
+        </form>
       </DialogContent>
 
       <DialogActions>
-        <Button onClick={onClose} color="inherit" disabled={submitting}>
+        <Button onClick={onClose} disabled={submitting} className="dialog-btn">
           Cancel
         </Button>
         <Button
-          onClick={submit}
+          type="submit"
+          form="deassign-form"
           variant="contained"
-          color="warning"
-          disabled={submitting || Boolean(error)}
+          disableElevation
+          disabled={submitting}
+          className="dialog-btn dialog-btn-primary"
+          startIcon={
+            submitting ? <CircularProgress size={16} color="inherit" /> : null
+          }
         >
-          {submitting ? "Taking back..." : "Take back"}
+          {submitting ? "Taking back…" : "Take back"}
         </Button>
       </DialogActions>
     </Dialog>

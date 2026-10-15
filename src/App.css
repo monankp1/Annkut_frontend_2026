@@ -78,190 +78,2052 @@
   background-color: #17a2b8;
 }
 
+/* ---- Login ------------------------------------------------------------- */
+
 .login-container {
   display: flex;
   flex-direction: column;
-  justify-content: center;
   align-items: center;
+  /* dvh tracks the mobile address bar showing/hiding; vh is the fallback. */
   min-height: 100vh;
+  min-height: 100dvh;
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
   background-color: #ffffff;
-}
-
-.login-card {
-  background-color: #ffffff;
-  padding: 2rem;
-  width: 100%;
-  color: cornsilk;
-  max-width: 400px;
-}
-
-.mandir-image {
-  width: 100vw;
-  height: 100%;
-  object-fit: cover;
-  position: relative;
-  mask-image: linear-gradient(
-    to bottom,
-    rgba(0, 0, 0, 1),
-    rgba(0, 0, 0, 0.5),
-    rgba(0, 0, 0, 0)
-  );
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    rgba(0, 0, 0, 1),
-    rgba(0, 0, 0, 0.5),
-    rgba(0, 0, 0, 0)
-  );
-}
-
-.login-container h1 {
-  text-align: center;
-  margin-bottom: 2rem;
-  color: #333;
-}
-
-.login-container label {
-  display: block;
-  margin-bottom: 0.5rem;
-  color: #666;
-}
-
-.login-container input {
-  width: 100%;
-  padding: 0.75rem;
-  margin-bottom: 1rem;
-  border: 2px solid #ddd;
-  border-radius: 15px;
   font-size: 1rem;
-}
-
-.login-btn {
-  width: 100%;
-  padding: 0.75rem;
-  background-color: #ed3237;
-  color: white;
-  border: none;
-  border-radius: 10px;
-  font-size: 1rem;
-  cursor: pointer;
-  transition: background-color 0.3s ease;
-}
-
-.login-btn:hover {
-  background-color: #0056b3;
-}
-
-.login-btn:disabled {
-  background-color: #a5a5a5;
-}
-
-.change-password-link {
-  text-align: center;
-  margin-top: 1rem;
-}
-
-.link {
-  color: #000000;
-  text-decoration: none;
-  font-size: 0.9rem;
-}
-
-.link:hover {
-  text-decoration: underline;
-}
-
-.password-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 100vh;
-  background-color: #ffffff;
-  /* A soft, light background color */
-}
-
-/* Styling for the password change card */
-.password-card {
-  width: 80vw;
-  max-width: 400px;
-  padding: 20px;
-  background-color: #ffffff;
-  /* White background for the card */
-  border-radius: 12px;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
   text-align: left;
 }
 
-/* Headline for the form */
-.password-card h1 {
-  font-size: 24px;
-  color: #333333;
-  margin-bottom: 20px;
+.login-header {
+  width: 100%;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   text-align: center;
 }
 
-/* Label styling for form inputs */
-.password-card label {
+.mandir-image {
   display: block;
-  margin-bottom: 8px;
-  font-weight: bold;
+  width: 100%;
+  height: clamp(160px, 32dvh, 300px);
+  object-fit: cover;
+  object-position: center 30%;
+  mask-image: linear-gradient(to bottom, #000 55%, transparent);
+  -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent);
+}
+
+/* Sits over the faded bottom edge of the photo so header reads as one unit. */
+.login-logo-badge {
+  width: 96px;
+  height: 96px;
+  margin-top: -56px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.baps-logo {
+  height: 68px;
+  width: auto;
+}
+
+.login-eyebrow {
+  margin: 1rem 0 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #8a8a8a;
+}
+
+.login-title {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #222222;
+}
+
+/* Takes the leftover height and centres the form in it, which keeps the
+   fields in the lower, thumb-friendly half on tall phones. */
+.login-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  width: 100%;
+  max-width: 420px;
+  padding: 1.5rem 1.25rem 0;
+}
+
+.login-forgot {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.75rem;
+}
+
+.login-forgot-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 0.25rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #ed3237;
+  text-decoration: none;
+}
+
+.login-forgot-link:active {
+  color: #c4242a;
+}
+
+/* ---- Shared form controls (login, change / reset password) ------------- */
+
+.auth-form label,
+.auth-form .field-label {
+  display: block;
+  margin-bottom: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #444444;
+}
+
+.auth-form input,
+.auth-form select {
+  display: block;
+  width: 100%;
+  height: 48px;
+  padding: 0 0.875rem;
+  margin: 0;
+  border: 1.5px solid #d6d6d6;
+  border-radius: 12px;
+  background: #ffffff;
+  /* 16px or more, or iOS zooms the page when the field is focused. */
+  font-size: 1rem;
+  color: #222222;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.auth-form input:focus,
+.auth-form select:focus {
+  outline: none;
+  border-color: #ed3237;
+  box-shadow: 0 0 0 3px rgba(237, 50, 55, 0.18);
+}
+
+.auth-form input[aria-invalid="true"],
+.auth-form select[aria-invalid="true"] {
+  border-color: #b3261e;
+}
+
+/* Native select (the phone's own picker), with our own chevron. */
+.auth-form select {
+  padding-right: 2.5rem;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%23666' viewBox='0 0 16 16'%3E%3Cpath d='M1.6 5.1a.75.75 0 0 1 1.06 0L8 10.4l5.34-5.3a.75.75 0 1 1 1.06 1.06l-5.87 5.83a.75.75 0 0 1-1.06 0L1.6 6.16a.75.75 0 0 1 0-1.06z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.875rem center;
+  text-overflow: ellipsis;
+}
+
+.auth-field {
+  margin-bottom: 1rem;
+}
+
+/* Label with something on the right, e.g. the phone digit counter. */
+.field-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.field-counter {
+  font-size: 0.8125rem;
+  color: #6b6b6b;
+  font-variant-numeric: tabular-nums;
+}
+
+.field-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.375rem;
+  margin: 0.375rem 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  color: #6b6b6b;
+}
+
+.field-hint .bi {
+  margin-top: 0.05rem;
+}
+
+.field-hint.is-ok {
+  color: #1e7b34;
+}
+
+.field-hint.is-error {
+  color: #b3261e;
+}
+
+.password-field {
+  position: relative;
+}
+
+.password-field input {
+  padding-right: 3rem;
+}
+
+.password-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  border-radius: 0 12px 12px 0;
+  color: #777777;
+  font-size: 1.25rem;
+}
+
+.password-toggle:focus-visible {
+  outline: 2px solid #ed3237;
+  outline-offset: -4px;
+}
+
+.brand-btn {
+  width: 100%;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background-color: #ed3237;
+  color: #ffffff;
+  border: none;
+  border-radius: 12px;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, transform 0.1s ease;
+}
+
+/* Hover only where there is a real pointer: on phones :hover sticks after a
+   tap and would leave the button recoloured. */
+@media (hover: hover) {
+  .brand-btn:hover {
+    background-color: #d92a2f;
+  }
+}
+
+.brand-btn:active {
+  background-color: #c4242a;
+  transform: scale(0.99);
+}
+
+.brand-btn:disabled {
+  background-color: #ed3237;
+  opacity: 0.7;
+  cursor: default;
+  transform: none;
+}
+
+.form-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0.875rem 0 0;
+  padding: 0.75rem 0.875rem;
+  border-radius: 12px;
+  background: #fdecec;
+  color: #b3261e;
+  font-size: 0.9375rem;
+  line-height: 1.35;
+}
+
+.form-error .bi {
+  margin-top: 0.1rem;
+}
+
+/* Quiet secondary action under the main button: Sign out, Back to login. */
+.text-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-height: 44px;
+  margin: 0.5rem auto 0;
+  padding: 0 1rem;
+  border: none;
+  background: none;
+  color: #555555;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.text-btn:active {
+  color: #222222;
+}
+
+/* ---- Change / reset password ------------------------------------------- */
+
+.pw-page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background-color: #ffffff;
+  font-size: 1rem;
+  text-align: left;
+}
+
+.app-bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  min-height: 56px;
+  padding: 0 0.5rem;
+  background: #ffffff;
+  border-bottom: 1px solid #ececec;
+}
+
+.app-bar-back {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #222222;
+  font-size: 1.375rem;
+}
+
+.app-bar-back:active {
+  background: #f2f2f2;
+}
+
+.app-bar-title {
+  margin: 0;
+  padding-left: 0.75rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #222222;
+}
+
+.pw-body {
+  max-width: 420px;
+  margin: 0 auto;
+  padding: 1.25rem 1.25rem max(1.5rem, env(safe-area-inset-bottom));
+}
+
+.pw-meta {
+  margin: 0 0 1.25rem;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  color: #6b6b6b;
+}
+
+/* Informational callout (first sign-in, target not set). Saffron from the logo. */
+.notice-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  margin-bottom: 1rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid #f6dcaa;
+  border-radius: 12px;
+  background: #fff6e6;
+  color: #6b4500;
+  font-size: 0.9375rem;
+  line-height: 1.4;
+}
+
+.notice-box .bi {
+  font-size: 1.125rem;
+  color: #c77700;
+}
+
+.pw-footnote {
+  margin: 0.25rem 0 1rem;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  color: #6b6b6b;
+}
+
+/* ---- Top bar & navigation drawer (every signed-in page) ---------------- */
+
+.top-bar {
+  position: sticky;
+  top: 0;
+  z-index: 1020;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-height: 56px;
+  margin-bottom: 7px;
+  padding: 0 0.75rem 0 0.25rem;
+  background: #ed3237;
+  color: #ffffff;
+  text-align: left;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+}
+
+.top-bar-menu {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #ffffff;
+  font-size: 1.625rem;
+}
+
+.top-bar-menu:active {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.top-bar-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.top-bar-title,
+.top-bar-subtitle {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.top-bar-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.top-bar-subtitle {
+  font-size: 0.75rem;
+  opacity: 0.85;
+}
+
+/* Two classes so these win over MUI's own (emotion) styles. */
+.MuiDrawer-paper.nav-drawer {
+  width: min(300px, 85vw);
+  padding-bottom: env(safe-area-inset-bottom);
+  text-align: left;
+  font-size: 1rem;
+}
+
+.nav-profile {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  padding: 1.5rem 1.25rem 1.25rem;
+  background: #fff5f5;
+  border-bottom: 1px solid #f3dede;
+}
+
+.nav-avatar,
+.member-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 50%;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.nav-avatar {
+  width: 48px;
+  height: 48px;
+  background: #ed3237;
+  color: #ffffff;
+  font-size: 1.25rem;
+}
+
+.nav-profile-text {
+  min-width: 0;
+}
+
+.nav-profile-name {
+  font-weight: 600;
+  color: #222222;
+  overflow-wrap: anywhere;
+}
+
+.nav-profile-meta {
+  font-size: 0.8125rem;
+  color: #6b6b6b;
+}
+
+.nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.5rem;
+}
+
+.nav-list-bottom {
+  margin-top: auto;
+  border-top: 1px solid #ececec;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-height: 48px;
+  padding: 0 0.875rem;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: #333333;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  text-align: left;
+}
+
+.nav-item .bi {
+  font-size: 1.25rem;
+  color: #666666;
+}
+
+.nav-item:active {
+  background: #f2f2f2;
+}
+
+.nav-item.is-active {
+  background: #fdecec;
+  color: #c4242a;
+  font-weight: 600;
+}
+
+.nav-item.is-active .bi {
+  color: #ed3237;
+}
+
+.nav-item.is-danger,
+.nav-item.is-danger .bi {
+  color: #b3261e;
+}
+
+/* ---- Dialogs & menus --------------------------------------------------- */
+
+.MuiDialog-paper.app-dialog {
+  width: calc(100% - 2rem);
+  max-width: 400px;
+  margin: 1rem;
+  border-radius: 16px;
+}
+
+.app-dialog .MuiDialogTitle-root {
+  padding-bottom: 0.5rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.app-dialog .MuiDialogContent-root {
+  font-size: 0.9375rem;
+  color: #444444;
+}
+
+.app-dialog .MuiDialogActions-root {
+  padding: 0 1rem 1rem;
+}
+
+.MuiButton-root.dialog-btn {
+  min-height: 44px;
+  padding: 0 1rem;
+  border-radius: 10px;
+  color: #444444;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  text-transform: none;
+}
+
+.MuiButton-root.dialog-btn-danger,
+.MuiButton-root.dialog-btn-danger.Mui-disabled {
+  background: #c4242a;
+  color: #ffffff;
+}
+
+.MuiButton-root.dialog-btn-danger:hover {
+  background: #a91e23;
+}
+
+.MuiButton-root.dialog-btn-danger.Mui-disabled {
+  opacity: 0.7;
+}
+
+/* The dialog's main, non-destructive action (e.g. Done). */
+.MuiButton-root.dialog-btn-primary {
+  background: #ed3237;
+  color: #ffffff;
+}
+
+.MuiButton-root.dialog-btn-primary:hover {
+  background: #d92a2f;
+}
+
+/* ⋮ menus (sevak actions, seva entry actions): rounded like the cards. */
+.MuiPaper-root.app-menu {
+  min-width: 210px;
+  margin-top: 4px;
+  border-radius: 14px;
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.12),
+    0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.app-menu .MuiList-root {
+  padding: 0.375rem;
+}
+
+.MuiMenuItem-root.menu-item {
+  min-height: 48px;
+  padding: 0 0.75rem;
+  border-radius: 10px;
+  font-size: 0.9375rem;
+  color: #333333;
+}
+
+.MuiMenuItem-root.menu-item:hover,
+.MuiMenuItem-root.menu-item.Mui-focusVisible {
+  background: #f5f5f7;
+}
+
+.menu-item .MuiListItemIcon-root {
+  min-width: 32px;
+  font-size: 1.0625rem;
   color: #555555;
 }
 
-/* Input fields styling */
-.password-card input {
-  width: 100%;
-  padding: 10px;
-  margin-bottom: 20px;
-  border: 1px solid #cccccc;
-  background-color: rgba(237, 50, 55, 0.2);
-  border-radius: 10px;
-  font-size: 16px;
-  box-sizing: border-box;
+.menu-item .MuiListItemText-primary {
+  font-size: 0.9375rem;
 }
 
-.password-card input:focus {
-  border-color: #007bff;
-  outline: none;
-  box-shadow: 0 0 5px rgba(0, 123, 255, 0.5);
+.menu-item .MuiListItemText-secondary {
+  font-size: 0.75rem;
 }
 
-/* Button styling */
-.password-card button {
-  width: 100%;
-  padding: 10px;
-  border: none;
-  border-radius: 10px;
-  background-color: #ed3237;
+.MuiMenuItem-root.menu-item.is-danger,
+.menu-item.is-danger .MuiListItemIcon-root {
+  color: #b3261e;
+}
+
+.MuiMenuItem-root.menu-item.is-danger:hover,
+.MuiMenuItem-root.menu-item.is-danger.Mui-focusVisible {
+  background: #fdecec;
+}
+
+/* ---- Home -------------------------------------------------------------- */
+
+.home-page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  /* Room for the pinned Add seva bar so the last card is not hidden. */
+  padding-bottom: calc(88px + env(safe-area-inset-bottom));
+  background: #f5f5f7;
+  font-size: 1rem;
+  text-align: left;
+}
+
+.member-tabs {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding: 0.5rem 1rem 0.25rem;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+
+.member-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.member-pill {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 48px;
+  padding: 0.375rem 0.875rem 0.375rem 0.375rem;
+  border: 1.5px solid #e0e0e0;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #333333;
+  text-align: left;
+  scroll-snap-align: start;
+}
+
+.member-pill.is-active {
+  background: #ed3237;
+  border-color: #ed3237;
   color: #ffffff;
-  font-size: 16px;
-  cursor: pointer;
-  transition: background-color 0.3s ease;
 }
 
-.password-card button:hover {
-  background-color: #c04eda;
+.member-avatar {
+  width: 36px;
+  height: 36px;
+  background: #fdecec;
+  color: #c4242a;
+  font-size: 0.9375rem;
 }
 
-.password-card button:disabled {
-  background-color: #cccccc;
-  cursor: not-allowed;
+.member-pill.is-active .member-avatar {
+  background: #ffffff;
+  color: #ed3237;
 }
 
-/* Link back to login */
-.back-to-login-link {
-  text-align: center;
-  margin-top: 1rem;
+.member-pill-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
 }
 
-/* Styling for the link */
-.link {
-  color: #007bff;
+.member-pill-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.member-pill-count {
+  font-size: 0.75rem;
+  opacity: 0.8;
+}
+
+.home-body {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 0.75rem 1rem 1rem;
+}
+
+.progress-card {
+  margin-bottom: 1.25rem;
+  padding: 1rem 1.125rem;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.progress-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 0.625rem;
+}
+
+.progress-card-count {
+  color: #444444;
+}
+
+.progress-card-count strong {
+  margin-right: 0.125rem;
+  font-size: 1.75rem;
+  color: #222222;
+}
+
+.progress-card-pct {
+  font-weight: 700;
+  color: #ed3237;
+}
+
+.progress-track {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #f0e3e3;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: #ed3237;
+  transition: width 0.4s ease;
+}
+
+.progress-card-foot {
+  margin-top: 0.625rem;
+  font-size: 0.875rem;
+  color: #6b6b6b;
+}
+
+.progress-card.is-achieved .progress-card-pct,
+.progress-card.is-achieved .progress-card-foot {
+  color: #1e7b34;
+  font-weight: 600;
+}
+
+.progress-card.is-achieved .progress-track {
+  background: #e3f2e7;
+}
+
+.progress-card.is-achieved .progress-fill {
+  background: #2e9e4f;
+}
+
+.section-title {
+  margin: 0 0 0.625rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #555555;
+}
+
+.seva-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.seva-card {
+  padding: 0.875rem 1rem;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.seva-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.seva-card-name {
+  font-weight: 600;
+  color: #222222;
+  overflow-wrap: anywhere;
+}
+
+.seva-card-amount {
+  font-weight: 700;
+  color: #222222;
+  white-space: nowrap;
+}
+
+.seva-card-meta {
+  margin-top: 0.125rem;
+  font-size: 0.8125rem;
+  color: #6b6b6b;
+}
+
+/* 44px tap targets, pulled into the card padding so the card stays compact. */
+.seva-card-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 0 -0.5rem -0.625rem 0;
+}
+
+.seva-card-phone {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-height: 44px;
+  font-size: 0.875rem;
+  color: #1a5fb4;
   text-decoration: none;
-  font-size: 0.9rem;
 }
 
-.link:hover {
-  text-decoration: underline;
+.MuiIconButton-root.seva-card-more {
+  width: 44px;
+  height: 44px;
+  color: #666666;
+  font-size: 1.125rem;
+}
+
+.seva-card.is-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.625rem;
+}
+
+.skeleton-line {
+  display: block;
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #eeeeee 25%, #f7f7f7 50%, #eeeeee 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.2s ease-in-out infinite;
+}
+
+.skeleton-line.sk-60 {
+  width: 60%;
+}
+
+.skeleton-line.sk-40 {
+  width: 40%;
+}
+
+.skeleton-line.sk-50 {
+  width: 50%;
+}
+
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-line {
+    animation: none;
+  }
+}
+
+.list-state {
+  padding: 2rem 1.5rem;
+  border-radius: 14px;
+  background: #ffffff;
+  color: #6b6b6b;
+  text-align: center;
+}
+
+.list-state-icon {
+  font-size: 2.25rem;
+  color: #c9c9c9;
+}
+
+.list-state-title {
+  margin: 0.5rem 0 0.25rem;
+  font-weight: 600;
+  color: #333333;
+}
+
+.list-state-text {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.outline-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-height: 44px;
+  margin-top: 0.75rem;
+  padding: 0 1.25rem;
+  border: 1.5px solid #ed3237;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #ed3237;
+  font-weight: 600;
+}
+
+.outline-btn:active {
+  background: #fdecec;
+}
+
+.void-summary {
+  margin-bottom: 0.75rem;
+  padding: 0.75rem 0.875rem;
+  border-radius: 12px;
+  background: #f5f5f7;
+}
+
+.void-note {
+  margin: 0;
+}
+
+/* Main action pinned to the bottom, in thumb reach on every screen size. */
+.bottom-action {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1010;
+  padding: 0.75rem 1rem max(0.75rem, env(safe-area-inset-bottom));
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 -1px 6px rgba(0, 0, 0, 0.08);
+}
+
+.bottom-action .brand-btn {
+  max-width: 608px;
+  margin: 0 auto;
+}
+
+/* ---- Sevak list (mandal grid + one mandal's sevaks) -------------------- */
+
+.list-page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding-bottom: 1.5rem;
+  background: #f5f5f7;
+  font-size: 1rem;
+  text-align: left;
+}
+
+/* Room for the pinned Add sevak bar so the last card is not hidden. */
+.list-page.has-bottom-action {
+  padding-bottom: calc(88px + env(safe-area-inset-bottom));
+}
+
+.list-body {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 0.75rem 1rem 1rem;
+}
+
+/* Inside a mandal: back arrow + the mandal's name. */
+.sub-bar {
+  display: flex;
+  align-items: center;
+  min-height: 52px;
+  margin-top: -7px;
+  padding: 0 0.5rem;
+  background: #ffffff;
+  border-bottom: 1px solid #ececec;
+}
+
+.sub-bar-title {
+  margin: 0;
+  padding-left: 0.75rem;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  color: #222222;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Search and filters stay reachable while the list scrolls under them. */
+.list-toolbar {
+  position: sticky;
+  top: 56px;
+  z-index: 1015;
+  padding: 0.625rem 1rem 0.5rem;
+  background: #f5f5f7;
+}
+
+.list-toolbar > * {
+  max-width: 608px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.list-toolbar-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.search-field {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.search-field .bi {
+  position: absolute;
+  top: 50%;
+  left: 0.875rem;
+  transform: translateY(-50%);
+  color: #888888;
+  pointer-events: none;
+}
+
+.search-field input {
+  width: 100%;
+  height: 44px;
+  padding: 0 0.875rem 0 2.5rem;
+  border: 1.5px solid #d6d6d6;
+  border-radius: 12px;
+  background: #ffffff;
+  /* 16px or more, or iOS zooms the page when the field is focused. */
+  font-size: 1rem;
+  color: #222222;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.search-field input:focus {
+  outline: none;
+  border-color: #ed3237;
+  box-shadow: 0 0 0 3px rgba(237, 50, 55, 0.18);
+}
+
+.icon-btn {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid #d6d6d6;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #444444;
+  font-size: 1.125rem;
+}
+
+.icon-btn:active {
+  background: #f2f2f2;
+}
+
+.icon-btn:disabled {
+  opacity: 0.5;
+}
+
+.chip-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.chip-row::-webkit-scrollbar {
+  display: none;
+}
+
+.filter-chip {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-height: 40px;
+  padding: 0 0.875rem;
+  border: 1.5px solid #d6d6d6;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #444444;
+  font-size: 0.875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.filter-chip.is-active {
+  border-color: #ed3237;
+  background: #fdecec;
+  color: #c4242a;
+}
+
+/* ₹500 and ₹1,000+ counts: small raised cards, tinted so they stand out. */
+.amount-tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.625rem;
+  margin-top: 0.875rem;
+}
+
+@media (max-width: 339px) {
+  .amount-tiles {
+    grid-template-columns: 1fr;
+  }
+}
+
+.amount-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid;
+  border-radius: 12px;
+}
+
+.amount-tile-count {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.amount-tile-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+/* Saffron, from the logo. */
+.amount-tile.is-500 {
+  border-color: #f6dcaa;
+  background: #fff6e6;
+  box-shadow: 0 3px 0 #efc98c, 0 6px 12px rgba(199, 119, 0, 0.12);
+  color: #8a6a2f;
+}
+
+.amount-tile.is-500 .amount-tile-count {
+  color: #8a5300;
+}
+
+/* Brand red. */
+.amount-tile.is-1000 {
+  border-color: #f5c6c7;
+  background: #fdecec;
+  box-shadow: 0 3px 0 #eaa3a5, 0 6px 12px rgba(196, 36, 42, 0.12);
+  color: #8f3a36;
+}
+
+.amount-tile.is-1000 .amount-tile-count {
+  color: #b3261e;
+}
+
+/* Summary card while its numbers load: same shape, grey shimmer. */
+.progress-card.is-skeleton .progress-card-head {
+  align-items: center;
+}
+
+.skeleton-line.skeleton-lg {
+  height: 24px;
+}
+
+.skeleton-line.skeleton-pct {
+  width: 40px;
+  height: 16px;
+}
+
+.skeleton-line.skeleton-track {
+  height: 10px;
+  border-radius: 999px;
+}
+
+.amount-tile.is-skeleton {
+  gap: 0.5rem;
+  border-color: #eeeeee;
+  background: #fafafa;
+}
+
+.progress-card-note {
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: #6b6b6b;
+}
+
+.area-group {
+  margin-bottom: 1.25rem;
+}
+
+.area-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin: 0 0 0.5rem;
+  padding: 0 0.25rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #555555;
+}
+
+.area-heading-count {
+  font-weight: 600;
+  letter-spacing: 0;
+  color: #6b6b6b;
+  font-variant-numeric: tabular-nums;
+}
+
+.mandal-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.875rem 1rem;
+  border: none;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  color: inherit;
+  text-align: left;
+}
+
+.mandal-row:active {
+  background: #fafafa;
+}
+
+.mandal-row .bi-chevron-right {
+  flex-shrink: 0;
+  color: #aaaaaa;
+}
+
+.mandal-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.mandal-row-name {
+  font-weight: 600;
+  color: #222222;
+}
+
+.mandal-row-progress,
+.sevak-card-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  color: #444444;
+  font-variant-numeric: tabular-nums;
+}
+
+.mandal-row-meta {
+  font-size: 0.8125rem;
+  color: #6b6b6b;
+}
+
+.mini-track {
+  flex-shrink: 0;
+  display: inline-block;
+  width: 72px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #f0e3e3;
+}
+
+.mini-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #ed3237;
+}
+
+/* The ⋮ button sits in the card's corner without adding height. */
+.sevak-card-actions {
+  flex-shrink: 0;
+  margin: -0.625rem -0.625rem -0.625rem 0;
+}
+
+/* 44px tap target for the phone link, pulled into the card padding. */
+.sevak-card-bottom {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  column-gap: 1rem;
+  min-height: 44px;
+  margin-bottom: -0.625rem;
+}
+
+/* Per-sevak ₹500 / ₹1,000+ split: the summary tiles' colours, kept small
+   and flat so they inform without competing with the name. */
+.split-pills {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.split-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.split-pill strong {
+  font-size: 0.8125rem;
+}
+
+.split-pill.is-500 {
+  border-color: #f6dcaa;
+  background: #fff6e6;
+  color: #8a5300;
+}
+
+.split-pill.is-1000 {
+  border-color: #f5c6c7;
+  background: #fdecec;
+  color: #b3261e;
+}
+
+.split-pill.is-zero {
+  opacity: 0.55;
+}
+
+/* ---- Receipt books ----------------------------------------------------- */
+
+/* Mandals | Office pool, for the admin. */
+.seg-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.625rem;
+  padding: 0.25rem;
+  border-radius: 12px;
+  background: #e9e9ee;
+}
+
+.seg-tab {
+  flex: 1;
+  min-height: 40px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: #555555;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.seg-tab.is-active {
+  background: #ffffff;
+  color: #c4242a;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.filter-chip-count {
+  font-weight: 500;
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
+
+.section-hint {
+  margin: 0 0 0.75rem;
+  padding: 0 0.25rem;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: #6b6b6b;
+}
+
+.status-pill {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.625rem;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.status-pill.is-available {
+  border-color: #c3e6cd;
+  background: #e8f5ec;
+  color: #1e7b34;
+}
+
+.status-pill.is-family {
+  border-color: #f6dcaa;
+  background: #fff6e6;
+  color: #8a5300;
+}
+
+.status-pill.is-office {
+  border-color: #d5dde6;
+  background: #eef2f6;
+  color: #44566b;
+}
+
+.status-pill.is-closed {
+  border-color: #e0e0e0;
+  background: #f0f0f0;
+  color: #666666;
+}
+
+.book-card .seva-card-top {
+  align-items: center;
+}
+
+.book-card.is-closed {
+  opacity: 0.65;
+}
+
+/* How much of the book has been written. */
+.usage-track {
+  display: block;
+  height: 6px;
+  margin: 0.5rem 0 0.375rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #eeeeee;
+}
+
+.usage-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #9aa5b1;
+}
+
+.book-card-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.5rem -0.5rem -0.375rem 0;
+}
+
+.book-card-bottom .outline-btn {
+  margin-top: 0;
+}
+
+.card-note {
+  font-size: 0.8125rem;
+  color: #6b6b6b;
+}
+
+/* A taller picker for a mandal's sevaks or the list of mandals. */
+.pick-list.is-tall {
+  max-height: min(52vh, 420px);
+}
+
+.pick-item.is-two-line {
+  min-height: 56px;
+  padding-top: 0.375rem;
+  padding-bottom: 0.375rem;
+}
+
+.pick-item-title {
+  display: block;
+  font-weight: 600;
+  color: inherit;
+}
+
+.pick-item-sub {
+  display: block;
+  font-size: 0.8125rem;
+  color: #6b6b6b;
+}
+
+/* Two short fields side by side (start / end receipt numbers). */
+.field-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.field-pair .auth-field {
+  margin-bottom: 0;
+}
+
+/* Irreversible: same callout, in red. */
+.notice-box.is-danger {
+  border-color: #f5c6c7;
+  background: #fdecec;
+  color: #8f1f1a;
+}
+
+.notice-box.is-danger .bi {
+  color: #c4242a;
+}
+
+/* ---- Find a book ------------------------------------------------------- */
+
+.toolbar-btn {
+  flex-shrink: 0;
+  min-height: 44px;
+  padding: 0 1.125rem;
+  border: none;
+  border-radius: 12px;
+  background: #ed3237;
+  color: #ffffff;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.toolbar-btn:active {
+  background: #c4242a;
+}
+
+.toolbar-btn:disabled {
+  opacity: 0.55;
+}
+
+.book-summary-top {
+  align-items: center;
+}
+
+.book-summary-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #222222;
+}
+
+.book-summary-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  font-size: 0.875rem;
+  color: #555555;
+  font-variant-numeric: tabular-nums;
+}
+
+.book-summary-stats strong {
+  color: #222222;
+}
+
+/* Matched against the page number in the physical book, so it leads. */
+.receipt-no {
+  font-size: 1.0625rem;
+  font-weight: 700;
+  color: #c4242a;
+  font-variant-numeric: tabular-nums;
+}
+
+.receipt-card-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* Room for the 44px ✎ button without making the card taller. */
+.receipt-card-right.has-action {
+  margin: -0.625rem -0.625rem -0.625rem 0;
+}
+
+/* ---- Add / Edit seva sheet --------------------------------------------- */
+
+.MuiDialog-paper.seva-sheet {
+  width: 100%;
+  max-width: 480px;
+  border-radius: 16px;
+  font-size: 1rem;
+  text-align: left;
+}
+
+.MuiDialog-paper.seva-sheet.is-phone {
+  max-width: none;
+  border-radius: 0;
+}
+
+.seva-sheet-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  min-height: 56px;
+  padding: env(safe-area-inset-top) 0.5rem 0;
+  border-bottom: 1px solid #ececec;
+}
+
+.seva-sheet-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem 1.25rem;
+}
+
+.seva-sheet-footer {
+  flex-shrink: 0;
+  padding: 0.75rem 1rem max(0.75rem, env(safe-area-inset-bottom));
+  border-top: 1px solid #ececec;
+  background: #ffffff;
+}
+
+.seva-sheet-footer .form-error {
+  margin: 0 0 0.75rem;
+}
+
+.seva-sheet .list-state {
+  background: #f5f5f7;
+}
+
+.behalf-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid #f6dcaa;
+  border-radius: 12px;
+  background: #fff6e6;
+}
+
+.behalf-label {
+  display: block;
+  font-size: 0.75rem;
+  color: #8a6a2f;
+}
+
+.behalf-name {
+  display: block;
+  font-weight: 600;
+  color: #4a3200;
+}
+
+.receipt-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.625rem;
+  padding: 0.625rem 0.875rem;
+  border-radius: 12px;
+  background: #f5f5f7;
+  color: #444444;
+  font-size: 0.9375rem;
+}
+
+.receipt-info .bi {
+  font-size: 1.25rem;
+  color: #888888;
+}
+
+.receipt-info-sub {
+  display: block;
+  font-size: 0.8125rem;
+  color: #6b6b6b;
+}
+
+/* One-tap choice buttons: seva amount, pankh, existing/new parivar. */
+.amount-segments,
+.choice-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.choice-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+}
+
+.amount-segment,
+.choice-btn {
+  flex: 1;
+  min-height: 48px;
+  padding: 0 0.5rem;
+  border: 1.5px solid #d6d6d6;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #333333;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.choice-grid .choice-btn {
+  font-size: 0.9375rem;
+}
+
+.amount-segment.is-active,
+.choice-btn.is-active {
+  border-color: #ed3237;
+  background: #fdecec;
+  color: #c4242a;
+}
+
+.choice-btn:disabled {
+  opacity: 0.45;
+}
+
+.amount-segment:focus-visible,
+.choice-btn:focus-visible {
+  outline: 2px solid #ed3237;
+  outline-offset: 2px;
+}
+
+.amount-locked {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 48px;
+  padding: 0 1.125rem;
+  border-radius: 12px;
+  background: #fdecec;
+  color: #c4242a;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.input-prefix {
+  position: relative;
+}
+
+.input-prefix-symbol {
+  position: absolute;
+  top: 50%;
+  left: 0.875rem;
+  transform: translateY(-50%);
+  color: #666666;
+  pointer-events: none;
+}
+
+.auth-form .input-prefix input {
+  padding-left: 2rem;
+}
+
+.skeleton-line.skeleton-input {
+  height: 48px;
+  border-radius: 12px;
+}
+
+/* ---- Add / Edit sevak, Reset password ---------------------------------- */
+
+/* Scrollable list of the mandal's families. */
+.pick-list {
+  max-height: 240px;
+  margin-top: 0.5rem;
+  overflow-y: auto;
+  border: 1.5px solid #d6d6d6;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.pick-list.is-invalid {
+  border-color: #b3261e;
+}
+
+.pick-list:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(237, 50, 55, 0.18);
+}
+
+.pick-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 0.875rem;
+  border: none;
+  border-bottom: 1px solid #f0f0f0;
+  background: #ffffff;
+  color: #333333;
+  font-size: 0.9375rem;
+  text-align: left;
+}
+
+.pick-item:last-child {
+  border-bottom: none;
+}
+
+.pick-item.is-active {
+  background: #fdecec;
+  color: #c4242a;
+}
+
+.pick-empty {
+  margin: 0;
+  padding: 1rem;
+  font-size: 0.875rem;
+  color: #6b6b6b;
+  text-align: center;
+}
+
+/* Target: − [ n ] + */
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.stepper-btn {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid #d6d6d6;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #333333;
+  font-size: 1.125rem;
+}
+
+.stepper-btn:active {
+  background: #f2f2f2;
+}
+
+.stepper-btn:disabled {
+  opacity: 0.4;
+}
+
+.auth-form .stepper input {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Sign-in details to read out after adding a sevak or resetting a password. */
+.signin-card {
+  padding: 1rem;
+  border: 1.5px solid #e6e6e6;
+  border-radius: 14px;
+  background: #fafafa;
+}
+
+.signin-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  color: #1e7b34;
+  font-weight: 600;
+}
+
+.signin-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  padding: 0.625rem 0;
+  border-top: 1px dashed #e0e0e0;
+}
+
+.signin-label {
+  font-size: 0.8125rem;
+  color: #6b6b6b;
+}
+
+/* Monospaced so 0/O and 1/l read differently when spoken aloud. */
+.signin-value {
+  font-family: ui-monospace, "SFMono-Regular", "Roboto Mono", Consolas,
+    monospace;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #222222;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.signin-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.signin-actions .outline-btn {
+  flex: 1;
+  justify-content: center;
+  margin-top: 0;
+}
+
+.signin-note {
+  margin: 0.75rem 0 0;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  color: #6b6b6b;
+}
+
+.sheet-footer-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.sheet-footer-row > * {
+  flex: 1;
+  justify-content: center;
+  margin-top: 0;
+}
+
+.dialog-subtitle {
+  margin: 0 0 1rem;
+  font-size: 0.875rem;
+  color: #6b6b6b;
+}
+
+/* Reset password: two choices as cards rather than bare radios. */
+.option-cards {
+  overflow: hidden;
+  border: 1.5px solid #d6d6d6;
+  border-radius: 12px;
+}
+
+/* Scoped under .auth-form so these win over the generic form label style. */
+.auth-form .option-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0.875rem 1rem;
+  font-size: 1rem;
+  font-weight: 400;
+  color: inherit;
+  cursor: pointer;
+}
+
+.auth-form .option-card + .option-card {
+  border-top: 1px solid #ececec;
+}
+
+.auth-form .option-card.is-active {
+  background: #fdecec;
+}
+
+.auth-form .option-card input[type="radio"] {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  margin-top: 0.125rem;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+  accent-color: #ed3237;
+}
+
+.auth-form .option-card .option-card-title {
+  display: block;
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #222222;
+}
+
+.option-card-sub {
+  display: block;
+  font-size: 0.8125rem;
+  color: #6b6b6b;
+}
+
+/* Option title on the left, a count on the right (export areas). */
+.option-card-row {
+  display: flex;
+  flex: 1;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.option-card-row .option-card-sub {
+  display: inline;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A single tick box with its label; scoped to beat the form label style. */
+.auth-form .check-row {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-height: 44px;
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: #333333;
+  cursor: pointer;
+}
+
+.auth-form .check-row input[type="checkbox"] {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+  accent-color: #ed3237;
 }
 
 .seva-boxes {

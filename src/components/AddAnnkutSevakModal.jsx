@@ -1,46 +1,39 @@
-import React, { useEffect, useState } from "react";
-import { Modal, ModalHeader, ModalBody, ModalFooter } from "reactstrap";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import api, { num, errorText } from "../api/annkut";
+import { cleanPhone, isCompletePhone, PHONE_ERROR } from "../utils/phone";
+import { FieldHint, FormError } from "./AuthFields";
+import SevaSheet from "./seva-form/SevaSheet";
 import {
-  cleanPhone,
-  isCompletePhone,
-  isPartialPhone,
-  phoneInputProps,
-  PHONE_ERROR,
-} from "../utils/phone";
-import { toast, ToastContainer } from "react-toastify";
-import TextField from "@mui/material/TextField";
-import Button from "@mui/material/Button";
+  Field,
+  SaveButton,
+  advanceOnEnter,
+  focusFirstError,
+} from "./seva-form/SevaFields";
 import {
-  Alert,
-  Box,
-  Divider,
-  FormControl,
-  FormHelperText,
-  InputLabel,
-  MenuItem,
-  Select,
-  Typography,
-} from "@mui/material";
+  NameAndMobileFields,
+  PankhPicker,
+  SEVAK_FIELD_ORDER,
+  TargetStepper,
+} from "./sevak-form/SevakFields";
+import SignInCard from "./sevak-form/SignInCard";
 
 // A Parivar is a family and a Sevak is one person in it, so adding someone
-// means saying which family they join — picked from the mandal's existing
-// ones, or a new one the server allocates.
+// means saying which family they join — one of the mandal's existing ones, or
+// a new one the server allocates.
 //
 // Adding a sevak also creates their login, and the 201 carries the details.
 // The person doing the adding is usually sitting next to the person being
-// added, so the modal ends on a panel they can read out rather than a toast
-// that slides away mid-sentence.
-export const PANKH_OPTIONS = [
-  { code: "S", label: "Sanyukt" },
-  { code: "M", label: "Mahila" },
-  { code: "YK", label: "Yuvak" },
-  { code: "YT", label: "Yuvati" },
-  { code: "BL", label: "Bal" },
-  { code: "BK", label: "Balika" },
-];
+// added, so the sheet ends on a card they can read out rather than a toast
+// that slides away mid-sentence — and only Done closes it.
 
 const EMPTY = {
+  parivar_mode: "existing",
   parivar_code: "",
   sevak_code: "",
   surname: "",
@@ -51,94 +44,122 @@ const EMPTY = {
   target_forms: "0",
 };
 
-// Sentinel for the last option in the parivar dropdown. Never sent as a code —
-// it switches the request to new_parivar instead.
-const NEW_PARIVAR = "__new__";
-
 function AddAnnkutSevakModal({ modal, setModal, mandal, refreshData }) {
   const [loader, setLoader] = useState(false);
   const [formData, setFormData] = useState(EMPTY);
+  const [errors, setErrors] = useState({});
+  const [serverError, setServerError] = useState("");
 
-  // Set once the sevak is created; swaps the body for the sign-in details.
+  // Set once the sevak is created; swaps the form for the sign-in details.
   const [result, setResult] = useState(null);
 
   const [parivars, setParivars] = useState([]);
   const [nextParivarCode, setNextParivarCode] = useState("");
-  const [parivarsLoading, setParivarsLoading] = useState(false);
+  const [parivarsLoading, setParivarsLoading] = useState(true);
   const [parivarsError, setParivarsError] = useState("");
+  const [parivarQuery, setParivarQuery] = useState("");
 
-  const toggle = () => setModal(!modal);
+  const close = () => setModal(false);
+
+  const request = useRef(0);
 
   // The families already in this mandal, plus a preview of the code a new one
   // would get.
-  useEffect(() => {
-    if (!modal || !mandal?.id) return undefined;
+  const loadParivars = useCallback(async () => {
+    if (!mandal?.id) return;
+    const id = ++request.current;
+    setParivarsLoading(true);
+    setParivarsError("");
+    try {
+      const res = await api.parivars(mandal.id);
+      if (id !== request.current) return;
+      const rows = Array.isArray(res?.parivar) ? res.parivar : [];
+      setParivars(rows);
+      setNextParivarCode(res?.next_parivar_code || "");
+      // A mandal with no families yet can only start one.
+      if (rows.length === 0) {
+        setFormData((p) => ({ ...p, parivar_mode: "new" }));
+      }
+    } catch (e) {
+      if (id !== request.current) return;
+      setParivars([]);
+      setParivarsError(errorText(e, "Unable to load families."));
+    } finally {
+      if (id === request.current) setParivarsLoading(false);
+    }
+  }, [mandal?.id]);
 
-    let ignore = false;
+  useEffect(() => {
+    if (!modal) return undefined;
     setResult(null);
     setFormData(EMPTY);
-
-    (async () => {
-      try {
-        setParivarsLoading(true);
-        setParivarsError("");
-        const res = await api.parivars(mandal.id);
-        if (ignore) return;
-        setParivars(Array.isArray(res?.parivar) ? res.parivar : []);
-        setNextParivarCode(res?.next_parivar_code || "");
-      } catch (e) {
-        if (!ignore) {
-          setParivars([]);
-          setParivarsError(errorText(e, "Unable to load families."));
-        }
-      } finally {
-        if (!ignore) setParivarsLoading(false);
-      }
-    })();
-
+    setErrors({});
+    setServerError("");
+    setParivarQuery("");
+    loadParivars();
     return () => {
-      ignore = true;
+      request.current += 1;
     };
-  }, [modal, mandal?.id]);
+  }, [modal, loadParivars]);
+
+  const visibleParivars = useMemo(() => {
+    const needle = parivarQuery.trim().toLowerCase();
+    if (!needle) return parivars;
+    return parivars.filter((p) =>
+      String(p?.code ?? "")
+        .toLowerCase()
+        .includes(needle),
+    );
+  }, [parivars, parivarQuery]);
+
+  const clearError = (name) => {
+    setErrors((p) => {
+      if (!p[name]) return p;
+      const { [name]: _gone, ...rest } = p;
+      return rest;
+    });
+    if (serverError) setServerError("");
+  };
+
+  const setField = (name, value) => {
+    setFormData((p) => ({ ...p, [name]: value }));
+    clearError(name);
+  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
+    if (name === "mobile") return setField("mobile", cleanPhone(value));
+    if (name === "sevak_code") return setField(name, value.toUpperCase());
+    setField(name, value);
+  };
 
-    if (name === "mobile") {
-      setFormData((p) => ({ ...p, mobile: cleanPhone(value) }));
-      return;
+  const validate = () => {
+    const errs = {};
+    if (formData.parivar_mode === "existing" && !formData.parivar_code) {
+      errs.parivar_code = "Pick the family this sevak belongs to.";
     }
-
-    if (name === "target_forms" && !/^\d*$/.test(value)) return;
-
-    const upper = name === "sevak_code";
-
-    setFormData((p) => ({ ...p, [name]: upper ? value.toUpperCase() : value }));
+    if (!formData.sevak_code.trim()) errs.sevak_code = "Sevak ID is required.";
+    if (!formData.first_name.trim())
+      errs.first_name = "First name is required.";
+    if (formData.mobile && !isCompletePhone(formData.mobile)) {
+      errs.mobile = PHONE_ERROR;
+    }
+    return errs;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!mandal?.id) return;
 
-    if (!mandal?.id) {
-      toast.error("Pick a mandal first.");
-      return;
-    }
-
-    if (
-      !formData.parivar_code ||
-      !formData.sevak_code.trim() ||
-      !formData.first_name.trim()
-    ) {
-      toast.error("Parivar, Sevak ID and first name are required.");
-      return;
-    }
-
-    if (formData.mobile && !isCompletePhone(formData.mobile)) {
-      toast.error(PHONE_ERROR);
+    const found = validate();
+    if (Object.keys(found).length > 0) {
+      setErrors(found);
+      focusFirstError(found, SEVAK_FIELD_ORDER);
       return;
     }
 
     setLoader(true);
+    setServerError("");
 
     const payload = {
       mandal_id: mandal.id,
@@ -152,257 +173,266 @@ function AddAnnkutSevakModal({ modal, setModal, mandal, refreshData }) {
     };
 
     try {
-      const startingNewFamily = formData.parivar_code === NEW_PARIVAR;
+      const res =
+        formData.parivar_mode === "new"
+          ? await api.addSevakInNewParivar(payload)
+          : await api.addSevak({
+              ...payload,
+              parivar_code: formData.parivar_code,
+            });
 
-      const res = startingNewFamily
-        ? await api.addSevakInNewParivar(payload)
-        : await api.addSevak({ ...payload, parivar_code: formData.parivar_code });
-
-      // Hold the modal open on a success panel: it carries the sign-in
-      // details, and under load the allocated parivar code can differ from
-      // the preview, so both need reading rather than flashing past.
+      // Hold the sheet open on the sign-in card: under load the allocated
+      // parivar code can differ from the preview, so it needs reading too.
       setResult(res);
       if (typeof refreshData === "function") refreshData();
     } catch (error) {
       // 409 when that sevak code is already taken.
-      toast.error(errorText(error, "Failed to add sevak."));
+      setServerError(errorText(error, "Failed to add sevak."));
     } finally {
       setLoader(false);
     }
   };
 
+  const addAnother = () => {
+    setResult(null);
+    setFormData(EMPTY);
+    setErrors({});
+    setParivarQuery("");
+    // The family list just gained a member (or a whole family).
+    loadParivars();
+  };
+
+  const dirty = Boolean(
+    formData.parivar_code ||
+    formData.sevak_code ||
+    formData.surname ||
+    formData.first_name ||
+    formData.middle_name ||
+    formData.mobile,
+  );
+
+  const isNew = formData.parivar_mode === "new";
+  const noFamiliesYet =
+    !parivarsLoading && !parivarsError && parivars.length === 0;
+
+  // One sheet throughout: the form turns into the sign-in card in place.
   return (
-    <div>
-      <Modal isOpen={modal} toggle={toggle}>
-        <ModalHeader toggle={toggle}>
-          {result ? "Sevak added" : "Add Annkut Sevak"}
-        </ModalHeader>
-
-        {result ? (
-          <ModalBody>
-            <Alert severity="success" sx={{ mb: 2 }}>
-              <strong>{result.sevak_code}</strong> added to parivar{" "}
-              <strong>{result.parivar_code}</strong>.
-            </Alert>
-
-            {/* The whole point of holding the modal open: the details to read
-                out to the person standing there. */}
-            {result.login && (
-              <Box
-                sx={{
-                  p: 2,
-                  border: "1px solid",
-                  borderColor: "divider",
-                  borderRadius: 1,
-                  bgcolor: "action.hover",
-                }}
-              >
-                <Typography variant="body2" sx={{ mb: 1 }}>
-                  They can sign in now:
-                </Typography>
-                <Typography sx={{ fontFamily: "monospace", fontSize: 16 }}>
-                  Sevak ID: <strong>{result.login.sevak_id}</strong>
-                </Typography>
-                <Typography sx={{ fontFamily: "monospace", fontSize: 16 }}>
-                  Password: <strong>{result.login.default_password}</strong>
-                </Typography>
-                {result.login.must_change_password && (
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ mt: 1 }}
-                  >
-                    They will be asked to choose a new password on first
-                    sign-in.
-                  </Typography>
-                )}
-              </Box>
-            )}
-          </ModalBody>
+    <SevaSheet
+      open={modal}
+      title={result ? "Sevak added" : "Add sevak"}
+      locked={Boolean(result)}
+      dirty={!result && dirty}
+      busy={loader}
+      discardTitle="Discard this sevak?"
+      onClose={close}
+      footer={
+        result ? (
+          <div className="sheet-footer-row">
+            <button type="button" className="outline-btn" onClick={addAnother}>
+              <i className="bi bi-person-plus" aria-hidden="true" /> Add another
+            </button>
+            <button type="button" className="brand-btn" onClick={close}>
+              Done
+            </button>
+          </div>
         ) : (
-        <ModalBody>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            Mandal: <strong>{mandal?.name || "-"}</strong>
-          </Typography>
-
-          <FormControl fullWidth margin="normal" size="small">
-            <InputLabel id="parivar-label">Parivar</InputLabel>
-            <Select
-              labelId="parivar-label"
-              label="Parivar"
-              name="parivar_code"
-              value={formData.parivar_code}
-              onChange={handleChange}
-            >
-              {parivarsLoading && <MenuItem disabled>Loading…</MenuItem>}
-              {parivarsError && <MenuItem disabled>{parivarsError}</MenuItem>}
-
-              {parivars.map((p) => (
-                <MenuItem key={p.id} value={p.code}>
-                  {p.code} ({num(p.members)} member
-                  {num(p.members) === 1 ? "" : "s"})
-                </MenuItem>
-              ))}
-
-              {parivars.length > 0 && <Divider />}
-
-              {/* The code shown here is only a preview — the server allocates
-                  the real one when this saves. */}
-              <MenuItem value={NEW_PARIVAR}>
-                + New parivar{nextParivarCode ? ` (${nextParivarCode})` : ""}
-              </MenuItem>
-            </Select>
-            <FormHelperText>
-              {formData.parivar_code === NEW_PARIVAR
-                ? "A new family will be started for this sevak."
-                : "Pick the family this sevak belongs to."}
-            </FormHelperText>
-          </FormControl>
-
-          <TextField
-            label="Sevak ID"
-            name="sevak_code"
-            placeholder="e.g. ASNK003"
-            value={formData.sevak_code}
-            onChange={handleChange}
-            variant="outlined"
-            fullWidth
-            margin="normal"
-            required
-            color="secondary"
-            helperText="Unique across the whole organisation."
-          />
-
-          <TextField
-            label="Surname"
-            name="surname"
-            value={formData.surname}
-            onChange={handleChange}
-            variant="outlined"
-            fullWidth
-            margin="normal"
-            color="secondary"
-          />
-
-          <TextField
-            label="First Name"
-            name="first_name"
-            value={formData.first_name}
-            onChange={handleChange}
-            variant="outlined"
-            fullWidth
-            margin="normal"
-            required
-            color="secondary"
-          />
-
-          <TextField
-            label="Father's / Husband's Name"
-            name="middle_name"
-            value={formData.middle_name}
-            onChange={handleChange}
-            variant="outlined"
-            fullWidth
-            margin="normal"
-            color="secondary"
-          />
-
-          <TextField
-            label="Mobile"
-            name="mobile"
-            value={formData.mobile}
-            onChange={handleChange}
-            variant="outlined"
-            fullWidth
-            margin="normal"
-            color="secondary"
-            error={isPartialPhone(formData.mobile)}
-            helperText={
-              isPartialPhone(formData.mobile) ? PHONE_ERROR : "10 digits"
+          <>
+            <FormError>{serverError}</FormError>
+            <SaveButton busy={loader} form="sevak-form">
+              Add sevak
+            </SaveButton>
+          </>
+        )
+      }
+    >
+      {result ? (
+        result.login ? (
+          <SignInCard
+            title={`${result.sevak_code} added to parivar ${result.parivar_code}`}
+            sevakId={result.login.sevak_id}
+            password={result.login.default_password}
+            note={
+              result.login.must_change_password
+                ? "They'll choose their own password on first sign-in."
+                : null
             }
-            inputProps={phoneInputProps}
           />
+        ) : (
+          <div className="signin-card">
+            <div className="signin-title">
+              <i className="bi bi-check-circle-fill" aria-hidden="true" />
+              <span>
+                {result.sevak_code} added to parivar {result.parivar_code}
+              </span>
+            </div>
+          </div>
+        )
+      ) : (
+        <>
+          <div className="receipt-info mt-0 mb-3">
+            <i className="bi bi-geo-alt" aria-hidden="true" />
+            <span>
+              Mandal <strong>{mandal?.name || "—"}</strong>
+            </span>
+          </div>
 
-          <FormControl fullWidth margin="normal" size="small">
-            <InputLabel id="pankh-label">Pankh</InputLabel>
-            <Select
-              labelId="pankh-label"
-              label="Pankh"
-              name="pankh"
-              value={formData.pankh}
+          <form
+            id="sevak-form"
+            className="auth-form"
+            onSubmit={handleSubmit}
+            onKeyDown={advanceOnEnter}
+            noValidate
+          >
+            <div className="auth-field">
+              <span className="field-label" id="parivar_label">
+                Parivar
+              </span>
+              <div
+                className="choice-row"
+                role="radiogroup"
+                aria-labelledby="parivar_label"
+              >
+                {[
+                  { mode: "existing", label: "Existing" },
+                  { mode: "new", label: "New parivar" },
+                ].map((o) => (
+                  <button
+                    key={o.mode}
+                    type="button"
+                    role="radio"
+                    aria-checked={formData.parivar_mode === o.mode}
+                    className={`choice-btn${
+                      formData.parivar_mode === o.mode ? " is-active" : ""
+                    }`}
+                    onClick={() => setField("parivar_mode", o.mode)}
+                    disabled={o.mode === "existing" && noFamiliesYet}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+
+              {isNew ? (
+                // The code shown is only a preview — the server allocates the
+                // real one when this saves.
+                <FieldHint>
+                  A new family will be started for this sevak
+                  {nextParivarCode ? ` (likely ${nextParivarCode})` : ""}.
+                </FieldHint>
+              ) : parivarsLoading && parivars.length === 0 ? (
+                <div aria-busy="true" aria-label="Loading families">
+                  <span className="skeleton-line skeleton-input mt-2" />
+                  <span className="skeleton-line skeleton-input mt-2" />
+                </div>
+              ) : parivarsError ? (
+                <div className="list-state mt-2" role="alert">
+                  <p className="list-state-title">Couldn't load families</p>
+                  <p className="list-state-text">{parivarsError}</p>
+                  <button
+                    type="button"
+                    className="outline-btn"
+                    onClick={loadParivars}
+                  >
+                    <i className="bi bi-arrow-clockwise" aria-hidden="true" />{" "}
+                    Retry
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="search-field mt-2">
+                    <i className="bi bi-search" aria-hidden="true" />
+                    <input
+                      type="search"
+                      value={parivarQuery}
+                      onChange={(e) => setParivarQuery(e.target.value)}
+                      placeholder="Search parivar code"
+                      aria-label="Search parivar code"
+                      autoComplete="off"
+                      enterKeyHint="search"
+                    />
+                  </div>
+                  <div
+                    id="parivar_code"
+                    tabIndex={-1}
+                    className={`pick-list${
+                      errors.parivar_code ? " is-invalid" : ""
+                    }`}
+                    role="radiogroup"
+                    aria-label="Parivar"
+                  >
+                    {visibleParivars.length === 0 ? (
+                      <p className="pick-empty">No parivar matches.</p>
+                    ) : (
+                      visibleParivars.map((p) => {
+                        const active = formData.parivar_code === p.code;
+                        const members = num(p.members);
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            role="radio"
+                            aria-checked={active}
+                            className={`pick-item${active ? " is-active" : ""}`}
+                            onClick={() => setField("parivar_code", p.code)}
+                          >
+                            <span>
+                              <strong>{p.code}</strong> · {members} member
+                              {members === 1 ? "" : "s"}
+                            </span>
+                            {active && (
+                              <i
+                                className="bi bi-check-lg"
+                                aria-hidden="true"
+                              />
+                            )}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                  {errors.parivar_code && (
+                    <FieldHint status="error">{errors.parivar_code}</FieldHint>
+                  )}
+                </>
+              )}
+            </div>
+
+            <Field
+              id="sevak_code"
+              label="Sevak ID"
+              placeholder="e.g. ASNK003"
+              type="text"
+              autoComplete="off"
+              autoCapitalize="characters"
+              autoCorrect="off"
+              spellCheck={false}
+              enterKeyHint="next"
+              value={formData.sevak_code}
               onChange={handleChange}
-            >
-              {PANKH_OPTIONS.map((p) => (
-                <MenuItem key={p.code} value={p.code}>
-                  {p.label}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+              error={errors.sevak_code}
+              hint="Unique across the whole organisation."
+            />
 
-          <TextField
-            label="Target"
-            name="target_forms"
-            value={formData.target_forms}
-            onChange={handleChange}
-            variant="outlined"
-            fullWidth
-            margin="normal"
-            color="secondary"
-            inputProps={{ inputMode: "numeric" }}
-            helperText="Also moves the mandal target by the same amount."
-          />
-        </ModalBody>
-        )}
+            <NameAndMobileFields
+              form={formData}
+              errors={errors}
+              onChange={handleChange}
+            />
 
-        <ModalFooter>
-          {result ? (
-            <>
-              <Button
-                variant="outlined"
-                color="secondary"
-                onClick={() => {
-                  setResult(null);
-                  setFormData(EMPTY);
-                }}
-              >
-                Add another
-              </Button>
-              <Button
-                variant="contained"
-                color="secondary"
-                onClick={toggle}
-                style={{ marginLeft: "10px" }}
-              >
-                Done
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button
-                variant="contained"
-                color="secondary"
-                onClick={handleSubmit}
-                disabled={loader}
-              >
-                {loader ? "Submitting..." : "Submit"}
-              </Button>
-              <Button
-                variant="contained"
-                color="error"
-                onClick={toggle}
-                style={{ marginLeft: "10px" }}
-                disabled={loader}
-              >
-                Cancel
-              </Button>
-            </>
-          )}
-        </ModalFooter>
-      </Modal>
+            <PankhPicker
+              value={formData.pankh}
+              onChange={(code) => setField("pankh", code)}
+            />
 
-      <ToastContainer position="top-center" autoClose={5000} theme="colored" />
-    </div>
+            <TargetStepper
+              value={formData.target_forms}
+              onChange={(v) => setField("target_forms", v)}
+              error={errors.target_forms}
+            />
+          </form>
+        </>
+      )}
+    </SevaSheet>
   );
 }
 

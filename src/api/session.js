@@ -148,6 +148,19 @@ export const canFilterYuva = (sevak) =>
     String((sevak && sevak.sevak_id) || "").toUpperCase()
   );
 
+/**
+ * Who gets the Export button on the sevak list. Named outright for the same
+ * reason as the Yuva switch: it is one office account's reporting job, not a
+ * permission the server grants. The data itself is whatever the caller's scope
+ * already lets them read — this only decides who sees the button.
+ */
+export const EXPORT_SEVAK_IDS = ["ADMIN26"];
+
+export const canExportSevaks = (sevak) =>
+  EXPORT_SEVAK_IDS.includes(
+    String((sevak && sevak.sevak_id) || "").toUpperCase()
+  );
+
 /** Issue a book the mandal already holds to a parivar. Admin + Sanchalak. */
 export const canAssignBook = (sevak) => can(sevak, "book.assign");
 

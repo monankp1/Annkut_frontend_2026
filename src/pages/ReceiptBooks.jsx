@@ -1,25 +1,18 @@
 // src/pages/ReceiptBooks.jsx
+//
+// Three views in one page: the mandal list (grouped by xetra), one mandal's
+// books, and — for the admin — the office pool. The view lives in the URL
+// (?mandal=12, ?view=pool) so the phone's back gesture steps between them and
+// a reload stays put.
 import React from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
-  Alert,
-  Box,
-  Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   Button,
-  Chip,
-  IconButton,
-  TextField,
-  Tooltip,
-  Typography,
+  CircularProgress,
   Dialog,
-  DialogTitle,
-  DialogContent,
   DialogActions,
+  DialogContent,
+  DialogTitle,
 } from "@mui/material";
 import { toast, ToastContainer } from "react-toastify";
 import Header from "../components/Header";
@@ -31,14 +24,58 @@ import {
   canManageBooks,
 } from "../api/session";
 
-import MandalGrid from "../components/receipt-books/MandalGrid";
-import BookTable from "../components/receipt-books/BookTable";
-
+import BookList, {
+  STATE_LABELS,
+  StatusPill,
+  UsageBar,
+  bookState,
+} from "../components/receipt-books/BookList";
 import AssignBookModal from "../components/receipt-books/AssignBookModal";
 import DeassignBookModal from "../components/receipt-books/DeassignBookModal";
 import AddBookModal from "../components/receipt-books/AddBookModal";
 import EditBookModal from "../components/receipt-books/EditBookModal";
 import TransferBookModal from "../components/receipt-books/TransferBookModal";
+
+const STATE_ORDER = ["available", "family", "office", "closed"];
+
+/** Search only what is on screen — never ids, flags or field names. */
+const matches = (needle, ...fields) =>
+  fields.some((f) =>
+    String(f ?? "")
+      .toLowerCase()
+      .includes(needle),
+  );
+
+const SkeletonCards = ({ label }) => (
+  <div aria-busy="true" aria-label={label}>
+    {[0, 1, 2, 3].map((i) => (
+      <div key={i} className="seva-card is-skeleton" aria-hidden="true">
+        <span className="skeleton-line sk-60" />
+        <span className="skeleton-line sk-40" />
+        <span className="skeleton-line sk-50" />
+      </div>
+    ))}
+  </div>
+);
+
+const ErrorState = ({ title, message, onRetry }) => (
+  <div className="list-state" role="alert">
+    <i className="bi bi-wifi-off list-state-icon" aria-hidden="true" />
+    <p className="list-state-title">{title}</p>
+    <p className="list-state-text">{message}</p>
+    <button type="button" className="outline-btn" onClick={onRetry}>
+      <i className="bi bi-arrow-clockwise" aria-hidden="true" /> Retry
+    </button>
+  </div>
+);
+
+const EmptyState = ({ icon = "bi-search", title, text }) => (
+  <div className="list-state">
+    <i className={`bi ${icon} list-state-icon`} aria-hidden="true" />
+    <p className="list-state-title">{title}</p>
+    {text && <p className="list-state-text">{text}</p>}
+  </div>
+);
 
 export default function ReceiptBooks() {
   const me = getSevak();
@@ -47,251 +84,205 @@ export default function ReceiptBooks() {
 
   // Stock control is the admin's: books enter a mandal and come back from a
   // parivar only on his say-so. A sanchalak does one thing — hand a book his
-  // mandal already holds to one of its families.
+  // mandal already holds to one of its families, and take it back.
   const mayAssign = canAssignBook(me);
   const mayManage = canManageBooks(me);
 
-  // Everything is addressed by mandal_id: a mandal code like "NK" is unique
-  // only inside its xetra, so the name alone is never enough.
-  const [mandals, setMandals] = React.useState([]);
-  const [books, setBooks] = React.useState([]);
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState("");
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // Someone holding several mandals picks one first; everyone else goes
-  // straight to their own.
-  const multiMandal = scoped;
-  const [mode, setMode] = React.useState(multiMandal ? "mandals" : "books");
-  const [selectedMandal, setSelectedMandal] = React.useState(
-    multiMandal ? null : ownMandal
-  );
+  // straight to their own. Everything is addressed by mandal_id: a mandal
+  // code like "NK" is unique only inside its xetra.
+  const selectedId = scoped
+    ? num(searchParams.get("mandal")) || null
+    : num(ownMandal?.id) || null;
+  const view =
+    mayManage && searchParams.get("view") === "pool"
+      ? "pool"
+      : selectedId
+        ? "books"
+        : "mandals";
 
-  const [qBooks, setQBooks] = React.useState("");
-  const [qMandal, setQMandal] = React.useState("");
-
-  const [assignOpen, setAssignOpen] = React.useState(false);
-  const [assignBook, setAssignBook] = React.useState(null);
-
-  const [deassignOpen, setDeassignOpen] = React.useState(false);
-  const [deassignBook, setDeassignBook] = React.useState(null);
-
-  const [editOpen, setEditOpen] = React.useState(false);
-  const [editingBook, setEditingBook] = React.useState(null);
-
-  const [deleteOpen, setDeleteOpen] = React.useState(false);
-  const [deletingBook, setDeletingBook] = React.useState(null);
-  const [deleteSubmitting, setDeleteSubmitting] = React.useState(false);
-
-  const [submitOpen, setSubmitOpen] = React.useState(false);
-  const [submittingBook, setSubmittingBook] = React.useState(null);
-  const [submitBusy, setSubmitBusy] = React.useState(false);
-
-  const [transferOpen, setTransferOpen] = React.useState(false);
-  const [transferBook, setTransferBook] = React.useState(null);
-
+  const [mandals, setMandals] = React.useState([]);
+  const [books, setBooks] = React.useState([]);
   // The office pool: stock with no family holding it and pages still left,
   // across every mandal in scope.
   const [pool, setPool] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState("");
 
+  const [qMandal, setQMandal] = React.useState("");
+  const [qBooks, setQBooks] = React.useState("");
+  const [qPool, setQPool] = React.useState("");
+  const [stateFilter, setStateFilter] = React.useState("all");
+
+  const [assignBook, setAssignBook] = React.useState(null);
+  const [deassignBook, setDeassignBook] = React.useState(null);
+  const [editingBook, setEditingBook] = React.useState(null);
+  const [transferBook, setTransferBook] = React.useState(null);
   const [addOpen, setAddOpen] = React.useState(false);
 
-  const activeMandal = selectedMandal;
+  const [deletingBook, setDeletingBook] = React.useState(null);
+  const [deleteBusy, setDeleteBusy] = React.useState(false);
+  const [submittingBook, setSubmittingBook] = React.useState(null);
+  const [submitBusy, setSubmitBusy] = React.useState(false);
 
   // ---------- fetchers ----------
 
-  const fetchMandals = React.useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await api.mandals({});
-      const arr = res?.mandal_array;
-      setMandals(Array.isArray(arr) ? arr : []);
-    } catch (e) {
-      console.error("Fetch mandals error:", e);
-      setMandals([]);
-      setError(errorText(e, "Failed to load mandals."));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  // One request at a time per screen; a reply that arrives after the user
+  // has moved on is dropped rather than shown on the wrong view.
+  const request = React.useRef(0);
 
-  const fetchBooks = React.useCallback(async (mandalId) => {
-    setError("");
+  const load = React.useCallback(async () => {
+    const id = ++request.current;
     setLoading(true);
+    setError("");
     try {
-      // With no mandal_id the server falls back to the caller's own mandal,
-      // and answers 400 for someone attached to none.
-      const rows = await api.books(mandalId || undefined);
-      setBooks(Array.isArray(rows) ? rows : []);
+      if (view === "mandals") {
+        const res = await api.mandals({});
+        if (id !== request.current) return;
+        setMandals(Array.isArray(res?.mandal_array) ? res.mandal_array : []);
+      } else if (view === "pool") {
+        const rows = await api.bookPool();
+        if (id !== request.current) return;
+        setPool(Array.isArray(rows) ? rows : []);
+      } else {
+        // With no mandal_id the server falls back to the caller's own mandal,
+        // and answers 400 for someone attached to none.
+        const rows = await api.books(selectedId || undefined);
+        if (id !== request.current) return;
+        setBooks(Array.isArray(rows) ? rows : []);
+      }
     } catch (e) {
-      console.error("Fetch books error:", e);
-      setError(errorText(e, "Failed to load books."));
-      setBooks([]);
+      console.error("Receipt books load error:", e);
+      if (id !== request.current) return;
+      setError(
+        errorText(
+          e,
+          view === "mandals"
+            ? "Failed to load mandals."
+            : view === "pool"
+              ? "Failed to load the office pool."
+              : "Failed to load books.",
+        ),
+      );
     } finally {
-      setLoading(false);
+      if (id === request.current) setLoading(false);
     }
-  }, []);
+  }, [view, selectedId]);
 
   React.useEffect(() => {
-    if (multiMandal) fetchMandals();
-    else fetchBooks(ownMandal?.id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    load();
+  }, [load]);
+
+  // A different mandal starts with a clean search and no filter.
+  React.useEffect(() => {
+    setQBooks("");
+    setStateFilter("all");
+    setBooks([]);
+  }, [selectedId]);
 
   // ---------- derived ----------
 
-  const filteredMandals = React.useMemo(() => {
+  const groupedMandals = React.useMemo(() => {
     const needle = qMandal.trim().toLowerCase();
-    if (!needle) return mandals;
-    return (mandals || []).filter((m) =>
-      JSON.stringify(m || {})
-        .toLowerCase()
-        .includes(needle)
-    );
+    const map = new Map();
+    for (const m of mandals) {
+      if (needle && !matches(needle, m?.name, m?.code, m?.area_name)) continue;
+      const key = String(m?.area_name ?? "").trim();
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(m);
+    }
+    return Array.from(map.entries());
   }, [mandals, qMandal]);
 
-  const filteredBooks = React.useMemo(() => {
+  const stateCounts = React.useMemo(() => {
+    const c = { all: books.length };
+    for (const s of STATE_ORDER) c[s] = 0;
+    for (const b of books) c[bookState(b)] += 1;
+    return c;
+  }, [books]);
+
+  const visibleBooks = React.useMemo(() => {
     const needle = qBooks.trim().toLowerCase();
-    if (!needle) return books;
-    return (books || []).filter((b) =>
-      JSON.stringify(b || {})
-        .toLowerCase()
-        .includes(needle)
+    return books.filter((b) => {
+      if (stateFilter !== "all" && bookState(b) !== stateFilter) return false;
+      if (!needle) return true;
+      return matches(
+        needle,
+        b?.book_no,
+        b?.parivar_code,
+        STATE_LABELS[bookState(b)],
+      );
+    });
+  }, [books, qBooks, stateFilter]);
+
+  const visiblePool = React.useMemo(() => {
+    const needle = qPool.trim().toLowerCase();
+    if (!needle) return pool;
+    return pool.filter((b) => matches(needle, b?.book_no, b?.mandal_name));
+  }, [pool, qPool]);
+
+  const selectedName =
+    location.state?.mandalName ||
+    mandals.find((m) => num(m?.id) === selectedId)?.name ||
+    books[0]?.mandal_name ||
+    (!scoped ? ownMandal?.name : "") ||
+    "Mandal";
+
+  // The modals address the mandal by id and show its name.
+  const activeMandal = selectedId
+    ? { id: selectedId, name: selectedName }
+    : null;
+
+  // ---------- navigation ----------
+
+  function openMandal(m) {
+    setSearchParams(
+      { mandal: String(num(m?.id)) },
+      { state: { mandalName: m?.name || "", fromList: true } },
     );
-  }, [books, qBooks]);
+  }
 
-  // ---------- handlers ----------
+  function showPool() {
+    setSearchParams({ view: "pool" }, { state: { fromList: true } });
+  }
 
-  const handleCardClick = async (m) => {
-    const picked = { id: num(m?.id), name: m?.name || "" };
-    setSelectedMandal(picked);
-    setQBooks("");
-    setMode("books");
-    await fetchBooks(picked.id);
-  };
+  function showMandals() {
+    setSearchParams({}, { replace: true });
+  }
 
-  const handleBackToMandals = () => {
-    setSelectedMandal(null);
-    setQBooks("");
-    setBooks([]);
-    setMode("mandals");
-  };
+  // Back to the list. When the list is what brought us here, step back in
+  // history so the arrow and the phone's back gesture agree.
+  function backToList() {
+    if (location.state?.fromList) navigate(-1);
+    else showMandals();
+  }
 
-  const refresh = () => {
-    if (mode === "pool") fetchPool();
-    else if (mode === "mandals" && multiMandal) fetchMandals();
-    else fetchBooks(activeMandal?.id);
-  };
-
-  const openEditModal = (row) => {
-    setEditingBook(row);
-    setEditOpen(true);
-  };
-  const closeEditModal = () => {
-    setEditOpen(false);
-    setEditingBook(null);
-  };
-
-  const openDeleteConfirm = (row) => {
-    setDeletingBook(row);
-    setDeleteOpen(true);
-  };
-  const closeDeleteConfirm = () => {
-    setDeleteOpen(false);
-    setDeletingBook(null);
-  };
+  // ---------- actions ----------
 
   const doDeleteBook = async () => {
     if (!deletingBook?.id) return;
     try {
-      setDeleteSubmitting(true);
+      setDeleteBusy(true);
       const res = await api.deleteBook(num(deletingBook.id));
       toast.success(res?.message || "Receipt book deleted.");
-      closeDeleteConfirm();
-      await fetchBooks(activeMandal?.id);
+      setDeletingBook(null);
+      load();
     } catch (e) {
       // 409 when the book is issued or already holds receipts.
       toast.error(errorText(e, "Failed to delete book."));
     } finally {
-      setDeleteSubmitting(false);
+      setDeleteBusy(false);
     }
-  };
-
-  const openAssignModal = (row) => {
-    if (!activeMandal?.id) {
-      toast.error("No mandal selected.");
-      return;
-    }
-    setAssignBook(row);
-    setAssignOpen(true);
-  };
-  const closeAssignModal = () => {
-    setAssignOpen(false);
-    setAssignBook(null);
-  };
-
-  const openDeassignModal = (row) => {
-    setDeassignBook(row);
-    setDeassignOpen(true);
-  };
-  const closeDeassignModal = () => {
-    setDeassignOpen(false);
-    setDeassignBook(null);
-  };
-
-  const openTransferModal = (row) => {
-    setTransferBook(row);
-    setTransferOpen(true);
-  };
-  const closeTransferModal = () => {
-    setTransferOpen(false);
-    setTransferBook(null);
-  };
-
-  const fetchPool = React.useCallback(async () => {
-    setError("");
-    setLoading(true);
-    try {
-      const rows = await api.bookPool();
-      setPool(Array.isArray(rows) ? rows : []);
-    } catch (e) {
-      console.error("Pool error:", e);
-      setError(errorText(e, "Failed to load the office pool."));
-      setPool([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  const openPool = async () => {
-    setMode("pool");
-    await fetchPool();
-  };
-
-  const openAddModal = () => {
-    if (!activeMandal?.id) {
-      toast.error("Select a mandal first.");
-      return;
-    }
-    setAddOpen(true);
-  };
-
-  // Submitting is one-way: there is no endpoint that un-submits a book, so it
-  // is confirmed as plainly as the delete.
-  const openSubmitConfirm = (row) => {
-    setSubmittingBook(row);
-    setSubmitOpen(true);
-  };
-  const closeSubmitConfirm = () => {
-    setSubmitOpen(false);
-    setSubmittingBook(null);
   };
 
   const doSubmitBook = async () => {
     if (!submittingBook?.id) return;
-
     try {
       setSubmitBusy(true);
-      setError("");
       const res = await api.submitBook(num(submittingBook.id));
       // SUBMITTED and CLOSED end very differently for the book, so the
       // server's own wording is what the user sees.
@@ -299,8 +290,8 @@ export default function ReceiptBooks() {
       const msg = res?.message || "Receipt book handed in.";
       if (closed) toast.warning(msg);
       else toast.success(msg);
-      closeSubmitConfirm();
-      await fetchBooks(activeMandal?.id);
+      setSubmittingBook(null);
+      load();
     } catch (e) {
       console.error("Submit error:", e);
       toast.error(errorText(e, "Failed to submit book."));
@@ -309,361 +300,447 @@ export default function ReceiptBooks() {
     }
   };
 
-  // A book is held by a parivar, not by one person: it stays in the house and
-  // whoever is around writes in it.
-  const ownerChip = (row) => {
-    const status = String(row?.status || "").toUpperCase();
+  // ---------- render pieces ----------
 
-    if (status === "CLOSED") {
-      return <Chip size="small" label="Closed" variant="outlined" />;
+  const query = view === "mandals" ? qMandal : view === "pool" ? qPool : qBooks;
+  const setQuery =
+    view === "mandals" ? setQMandal : view === "pool" ? setQPool : setQBooks;
+
+  const toolbar = (
+    <div className="list-toolbar">
+      {/* Stock that came back part-used is worth redistributing, and only the
+          office can move it — so the admin gets the pool as a second tab. */}
+      {mayManage && view !== "books" && (
+        <div className="seg-tabs" role="tablist" aria-label="Receipt books">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "mandals"}
+            className={`seg-tab${view === "mandals" ? " is-active" : ""}`}
+            onClick={() => view === "pool" && backToList()}
+          >
+            Mandals
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "pool"}
+            className={`seg-tab${view === "pool" ? " is-active" : ""}`}
+            onClick={() => view !== "pool" && showPool()}
+          >
+            Office pool
+          </button>
+        </div>
+      )}
+
+      <div className="list-toolbar-row">
+        <div className="search-field">
+          <i className="bi bi-search" aria-hidden="true" />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={
+              view === "mandals"
+                ? "Search mandals"
+                : view === "pool"
+                  ? "Search book number or mandal"
+                  : "Search book number or parivar"
+            }
+            aria-label="Search"
+            enterKeyHint="search"
+          />
+        </div>
+        <button
+          type="button"
+          className="icon-btn"
+          onClick={load}
+          disabled={loading}
+          aria-label="Refresh"
+        >
+          <i className="bi bi-arrow-clockwise" aria-hidden="true" />
+        </button>
+      </div>
+
+      {view === "books" && books.length > 0 && (
+        <div className="chip-row" role="group" aria-label="Filter by status">
+          {["all", ...STATE_ORDER]
+            .filter(
+              (s) => s === "all" || stateCounts[s] > 0 || stateFilter === s,
+            )
+            .map((s) => (
+              <button
+                key={s}
+                type="button"
+                aria-pressed={stateFilter === s}
+                className={`filter-chip${stateFilter === s ? " is-active" : ""}`}
+                onClick={() => setStateFilter(s)}
+              >
+                {s === "all" ? "All" : STATE_LABELS[s]}{" "}
+                <span className="filter-chip-count">{stateCounts[s]}</span>
+              </button>
+            ))}
+        </div>
+      )}
+    </div>
+  );
+
+  let content;
+
+  if (!scoped && !ownMandal) {
+    content = (
+      <EmptyState
+        icon="bi-journal-x"
+        title="No books to manage"
+        text="Your account is not attached to a mandal."
+      />
+    );
+  } else if (error) {
+    content = (
+      <ErrorState
+        title={
+          view === "mandals"
+            ? "Couldn't load mandals"
+            : view === "pool"
+              ? "Couldn't load the office pool"
+              : "Couldn't load books"
+        }
+        message={error}
+        onRetry={load}
+      />
+    );
+  } else if (view === "mandals") {
+    if (loading && mandals.length === 0) {
+      content = <SkeletonCards label="Loading mandals" />;
+    } else if (groupedMandals.length === 0) {
+      content = (
+        <EmptyState
+          title={
+            qMandal.trim()
+              ? `No mandals match “${qMandal.trim()}”`
+              : "No mandals found"
+          }
+        />
+      );
+    } else {
+      content = groupedMandals.map(([area, rows]) => (
+        <section key={area || "no-area"} className="area-group">
+          <h2 className="area-heading">
+            <span>{area || "(No Xetra)"}</span>
+            <span className="area-heading-count">{rows.length} mandals</span>
+          </h2>
+          <ul className="seva-list">
+            {rows.map((m) => (
+              <li key={m?.id}>
+                <button
+                  type="button"
+                  className="mandal-row"
+                  onClick={() => openMandal(m)}
+                >
+                  <span className="mandal-row-main">
+                    <span className="mandal-row-name">
+                      {m?.name || "Mandal"}
+                    </span>
+                    <span className="mandal-row-meta">
+                      {num(m?.sevaks)} sevaks · {num(m?.parivars)} parivars
+                    </span>
+                  </span>
+                  <i className="bi bi-chevron-right" aria-hidden="true" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ));
     }
-
-    if (status === "SUBMITTED") {
-      return (
-        <Chip
-          size="small"
-          color="info"
-          variant="outlined"
-          label={`With office · ${num(row?.remaining)} left`}
+  } else if (view === "pool") {
+    if (loading && pool.length === 0) {
+      content = <SkeletonCards label="Loading the office pool" />;
+    } else if (visiblePool.length === 0) {
+      content = (
+        <EmptyState
+          icon="bi-inbox"
+          title={
+            qPool.trim()
+              ? `No books match “${qPool.trim()}”`
+              : "Nothing waiting to be redistributed"
+          }
+          text={
+            qPool.trim()
+              ? null
+              : "Books no family is holding, with receipts still left, show up here."
+          }
+        />
+      );
+    } else {
+      content = (
+        <>
+          <p className="section-hint">
+            Books no family is holding, with receipts still left. Closed books
+            never appear here.
+          </p>
+          <ul className="seva-list">
+            {visiblePool.map((row) => (
+              <li key={row.id} className="seva-card book-card">
+                <div className="seva-card-top">
+                  <span className="seva-card-name">Book {row.book_no}</span>
+                  <span
+                    className={`status-pill is-${
+                      bookState(row) === "office" ? "office" : "available"
+                    }`}
+                  >
+                    {bookState(row) === "office"
+                      ? "Came back part-used"
+                      : "Never issued"}
+                  </span>
+                </div>
+                <div className="seva-card-meta">
+                  From {row.mandal_name || "—"} · {num(row.remaining)} left ·
+                  next {num(row.next_receipt_no)}
+                </div>
+                <UsageBar row={row} />
+                <div className="book-card-bottom">
+                  <button
+                    type="button"
+                    className="outline-btn"
+                    onClick={() => setTransferBook(row)}
+                  >
+                    <i className="bi bi-send-fill" aria-hidden="true" /> Send
+                    to…
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
+      );
+    }
+  } else {
+    let list;
+    if (loading && books.length === 0) {
+      list = <SkeletonCards label="Loading books" />;
+    } else if (books.length === 0) {
+      list = (
+        <EmptyState
+          icon="bi-journal-x"
+          title="No books in this mandal yet"
+          text={mayManage ? "Tap Add book below to add one." : null}
+        />
+      );
+    } else if (visibleBooks.length === 0) {
+      list = (
+        <EmptyState
+          title={
+            qBooks.trim()
+              ? `No books match “${qBooks.trim()}”`
+              : `No ${STATE_LABELS[stateFilter]?.toLowerCase()} books`
+          }
+        />
+      );
+    } else {
+      list = (
+        <BookList
+          rows={visibleBooks}
+          mayAssign={mayAssign}
+          mayManage={mayManage}
+          onAssign={setAssignBook}
+          onDeassign={setDeassignBook}
+          onSubmitBook={setSubmittingBook}
+          onTransfer={setTransferBook}
+          onEdit={setEditingBook}
+          onDelete={setDeletingBook}
         />
       );
     }
+    content = list;
+  }
 
-    if (row?.parivar_id) {
-      return (
-        <Chip
-          size="small"
-          color="primary"
-          label={`Parivar: ${row.parivar_code || row.parivar_id}`}
-        />
-      );
-    }
-
-    return <Chip size="small" label="Available" variant="outlined" />;
-  };
-
-  // ---------- render ----------
+  const showAdd = view === "books" && mayManage && Boolean(activeMandal);
 
   return (
-    <>
+    <div className={`list-page${showAdd ? " has-bottom-action" : ""}`}>
       <Header />
 
-      <Box p={2}>
-        <Box
-          display="flex"
-          alignItems="center"
-          justifyContent="space-between"
-          mb={2}
-        >
-          <Typography variant="h5">Receipt Books</Typography>
-
-          <Box display="flex" alignItems="center" gap={1}>
-            {mode === "books" && activeMandal?.id && mayManage && (
-              <Button variant="contained" onClick={openAddModal}>
-                Add Book
-              </Button>
-            )}
-
-            {/* Stock that came back part-used is worth redistributing, and
-                only the office can move it. */}
-            {mayManage && mode !== "pool" && (
-              <Button variant="outlined" onClick={openPool}>
-                Office pool
-              </Button>
-            )}
-
-            <Tooltip title="Refresh">
-              <IconButton onClick={refresh} disabled={loading}>
-                <i className="bi bi-arrow-clockwise"></i>
-              </IconButton>
-            </Tooltip>
-          </Box>
-        </Box>
-
-        {!scoped && !ownMandal && (
-          <Box mb={2} color="text.secondary">
-            Your account is not attached to a mandal, so there are no books to
-            manage here.
-          </Box>
-        )}
-
-        {mode === "pool" && (
-          <>
-            <Box display="flex" alignItems="center" gap={1} mb={1}>
-              <Button
-                variant="outlined"
-                onClick={() => {
-                  setMode(multiMandal ? "mandals" : "books");
-                  setPool([]);
-                }}
-                startIcon={<i className="bi bi-arrow-left"></i>}
-              >
-                Back
-              </Button>
-              <Typography variant="body2" color="text.secondary">
-                Books no family is holding, with receipts still left. Closed
-                books never appear here.
-              </Typography>
-            </Box>
-
-            {error && (
-              <Box mb={1} color="error.main">
-                {error}
-              </Box>
-            )}
-
-            <TableContainer component={Paper} sx={{ maxHeight: 650 }}>
-              <Table stickyHeader>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Book</TableCell>
-                    <TableCell>From</TableCell>
-                    <TableCell>Left</TableCell>
-                    <TableCell>Next</TableCell>
-                    <TableCell>Status</TableCell>
-                    <TableCell>Action</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {pool.map((row) => (
-                    <TableRow key={row.id} hover>
-                      <TableCell>{row.book_no}</TableCell>
-                      <TableCell>{row.mandal_name}</TableCell>
-                      <TableCell>{num(row.remaining)}</TableCell>
-                      <TableCell>{num(row.next_receipt_no)}</TableCell>
-                      <TableCell>
-                        <Chip
-                          size="small"
-                          variant="outlined"
-                          label={
-                            String(row.status).toUpperCase() === "SUBMITTED"
-                              ? "Came back part-used"
-                              : "Never issued"
-                          }
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          size="small"
-                          variant="contained"
-                          onClick={() => openTransferModal(row)}
-                        >
-                          Send to…
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-
-                  {pool.length === 0 && (
-                    <TableRow>
-                      <TableCell
-                        colSpan={6}
-                        align="center"
-                        sx={{ py: 4, color: "text.secondary" }}
-                      >
-                        {loading
-                          ? "Loading the pool…"
-                          : "Nothing waiting to be redistributed"}
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </>
-        )}
-
-        {multiMandal && mode === "mandals" && (
-          <>
-            <Box display="flex" gap={1} mb={2}>
-              <TextField
-                size="small"
-                placeholder="Search mandals…"
-                value={qMandal}
-                onChange={(e) => setQMandal(e.target.value)}
-                sx={{ width: 360 }}
-              />
-            </Box>
-
-            <MandalGrid
-              mandals={filteredMandals}
-              loading={loading}
-              onClickMandal={handleCardClick}
-            />
-          </>
-        )}
-
-        {mode === "books" && (
-          <>
-            <Box
-              display="flex"
-              alignItems="center"
-              justifyContent="space-between"
-              mb={1}
+      {view === "books" && (
+        <div className="sub-bar">
+          {scoped && (
+            <button
+              type="button"
+              className="app-bar-back"
+              onClick={backToList}
+              aria-label="Back to mandals"
             >
-              <Box display="flex" alignItems="center" gap={1}>
-                {multiMandal && (
-                  <Button
-                    variant="outlined"
-                    onClick={handleBackToMandals}
-                    startIcon={<i className="bi bi-arrow-left"></i>}
-                  >
-                    Back to mandals
-                  </Button>
-                )}
-                {activeMandal?.name && (
-                  <Chip
-                    variant="outlined"
-                    label={`Mandal: ${activeMandal.name}`}
-                  />
-                )}
-              </Box>
+              <i className="bi bi-arrow-left" aria-hidden="true" />
+            </button>
+          )}
+          <h1 className="sub-bar-title">{selectedName}</h1>
+        </div>
+      )}
 
-              <TextField
-                size="small"
-                placeholder="Search books by number, sevak…"
-                value={qBooks}
-                onChange={(e) => setQBooks(e.target.value)}
-                sx={{ width: 360 }}
-              />
-            </Box>
+      {(scoped || ownMandal) && toolbar}
 
-            {error && (
-              <Box mb={1} color="error.main">
-                {error}
-              </Box>
-            )}
+      <main className="list-body">{content}</main>
 
-            <BookTable
-              rows={filteredBooks}
-              loading={loading}
-              mayAssign={mayAssign}
-              mayManage={mayManage}
-              ownerChip={ownerChip}
-              onAssign={openAssignModal}
-              onDeassign={openDeassignModal}
-              onSubmitBook={openSubmitConfirm}
-              onTransfer={openTransferModal}
-              onEdit={openEditModal}
-              onDelete={openDeleteConfirm}
-            />
-          </>
-        )}
-      </Box>
+      {showAdd && (
+        <div className="bottom-action">
+          <button
+            type="button"
+            className="brand-btn"
+            onClick={() => setAddOpen(true)}
+          >
+            <i className="bi bi-plus-lg" aria-hidden="true" />
+            <span>Add book</span>
+          </button>
+        </div>
+      )}
 
       <AssignBookModal
-        open={assignOpen}
-        onClose={closeAssignModal}
+        open={Boolean(assignBook)}
+        onClose={() => setAssignBook(null)}
         mandal={activeMandal}
         book={assignBook}
-        onAssigned={() => fetchBooks(activeMandal?.id)}
+        onAssigned={load}
       />
 
       <DeassignBookModal
-        open={deassignOpen}
-        onClose={closeDeassignModal}
+        open={Boolean(deassignBook)}
+        onClose={() => setDeassignBook(null)}
         book={deassignBook}
-        onDeassigned={() => fetchBooks(activeMandal?.id)}
+        onDeassigned={load}
       />
 
       <AddBookModal
         open={addOpen}
         onClose={() => setAddOpen(false)}
         mandal={activeMandal}
-        onAdded={() => fetchBooks(activeMandal?.id)}
+        onAdded={load}
       />
 
       <TransferBookModal
-        open={transferOpen}
-        onClose={closeTransferModal}
+        open={Boolean(transferBook)}
+        onClose={() => setTransferBook(null)}
         book={transferBook}
-        onTransferred={() =>
-          mode === "pool" ? fetchPool() : fetchBooks(activeMandal?.id)
-        }
+        onTransferred={load}
       />
 
       <EditBookModal
-        open={editOpen}
-        onClose={closeEditModal}
+        open={Boolean(editingBook)}
+        onClose={() => setEditingBook(null)}
         book={editingBook}
-        onSaved={() => fetchBooks(activeMandal?.id)}
+        onSaved={load}
       />
 
+      {/* Submitting is one-way: there is no endpoint that un-submits a book,
+          so it is confirmed as plainly as the delete. Where the book ends up
+          depends entirely on whether any page is left, so say which of the
+          two will happen before they commit. */}
       <Dialog
-        open={submitOpen}
-        onClose={closeSubmitConfirm}
-        fullWidth
-        maxWidth="xs"
+        open={Boolean(submittingBook)}
+        onClose={() => !submitBusy && setSubmittingBook(null)}
+        PaperProps={{ className: "app-dialog" }}
       >
         <DialogTitle>Submit book {submittingBook?.book_no}?</DialogTitle>
         <DialogContent>
-          {/* Where the book ends up depends entirely on whether any page is
-              left, so say which of the two will happen before they commit. */}
+          {submittingBook && (
+            <div className="void-summary">
+              <div className="seva-card-top">
+                <span className="seva-card-name">
+                  Book {submittingBook.book_no}
+                </span>
+                <StatusPill row={submittingBook} />
+              </div>
+              <div className="seva-card-meta">
+                {num(submittingBook.remaining)} receipts left
+              </div>
+            </div>
+          )}
           {num(submittingBook?.remaining) > 0 ? (
-            <>
-              <Alert severity="info" sx={{ mb: 2 }}>
-                {num(submittingBook?.remaining)} receipts still left, so the
-                book goes back to the office and can be sent to any mandal.
-              </Alert>
-              <Typography variant="body2">
-                It leaves
+            <div className="notice-box mb-0">
+              <i className="bi bi-info-circle-fill" aria-hidden="true" />
+              <span>
+                It goes back to the office and can be sent to any mandal. It
+                leaves
                 {submittingBook?.parivar_code
                   ? ` parivar ${submittingBook.parivar_code}`
                   : " this mandal"}{" "}
                 and stops accepting seva here. The next mandal picks it up at
                 receipt <strong>{num(submittingBook?.next_receipt_no)}</strong>.
-              </Typography>
-            </>
+              </span>
+            </div>
           ) : (
-            <>
-              <Alert severity="warning" sx={{ mb: 2 }}>
-                This cannot be undone.
-              </Alert>
-              <Typography variant="body2">
-                Every receipt has been used, so book{" "}
-                <strong>{submittingBook?.book_no}</strong> will be closed
-                permanently. It can never be issued again, to this mandal or
-                any other.
-              </Typography>
-            </>
+            <div className="notice-box is-danger mb-0">
+              <i
+                className="bi bi-exclamation-octagon-fill"
+                aria-hidden="true"
+              />
+              <span>
+                <strong>This cannot be undone.</strong> Every receipt has been
+                used, so the book will be closed permanently. It can never be
+                issued again, to this mandal or any other.
+              </span>
+            </div>
           )}
         </DialogContent>
         <DialogActions>
           <Button
-            onClick={closeSubmitConfirm}
-            color="inherit"
+            onClick={() => setSubmittingBook(null)}
             disabled={submitBusy}
+            className="dialog-btn"
           >
             Cancel
           </Button>
           <Button
             onClick={doSubmitBook}
-            color="success"
-            variant="contained"
             disabled={submitBusy}
+            variant="contained"
+            disableElevation
+            className={`dialog-btn ${
+              num(submittingBook?.remaining) > 0
+                ? "dialog-btn-primary"
+                : "dialog-btn-danger"
+            }`}
+            startIcon={
+              submitBusy ? <CircularProgress size={16} color="inherit" /> : null
+            }
           >
-            {submitBusy ? "Submitting..." : "Submit book"}
+            {submitBusy
+              ? "Submitting…"
+              : num(submittingBook?.remaining) > 0
+                ? "Submit book"
+                : "Close book"}
           </Button>
         </DialogActions>
       </Dialog>
 
-      <Dialog open={deleteOpen} onClose={closeDeleteConfirm} fullWidth maxWidth="xs">
-        <DialogTitle>Delete Book {deletingBook?.book_no}</DialogTitle>
+      <Dialog
+        open={Boolean(deletingBook)}
+        onClose={() => !deleteBusy && setDeletingBook(null)}
+        PaperProps={{ className: "app-dialog" }}
+      >
+        <DialogTitle>Delete book {deletingBook?.book_no}?</DialogTitle>
         <DialogContent>
           This removes the receipt book record. A book that is issued, or that
           already holds receipts, cannot be deleted.
         </DialogContent>
         <DialogActions>
-          <Button onClick={closeDeleteConfirm} color="inherit">
+          <Button
+            onClick={() => setDeletingBook(null)}
+            disabled={deleteBusy}
+            className="dialog-btn"
+          >
             Cancel
           </Button>
           <Button
             onClick={doDeleteBook}
-            color="error"
+            disabled={deleteBusy}
             variant="contained"
-            disabled={deleteSubmitting}
+            disableElevation
+            className="dialog-btn dialog-btn-danger"
+            startIcon={
+              deleteBusy ? <CircularProgress size={16} color="inherit" /> : null
+            }
           >
-            {deleteSubmitting ? "Deleting..." : "Delete"}
+            {deleteBusy ? "Deleting…" : "Delete"}
           </Button>
         </DialogActions>
       </Dialog>
@@ -675,6 +752,6 @@ export default function ReceiptBooks() {
         pauseOnHover
         theme="colored"
       />
-    </>
+    </div>
   );
 }

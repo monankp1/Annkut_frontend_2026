@@ -38,7 +38,7 @@ export default function SevakActionsMenu({
   if (mayEdit) {
     items.push({
       key: "edit",
-      icon: "bi-pencil",
+      icon: "bi-pencil-fill",
       label: "Edit",
       onClick: choose(onEdit),
     });
@@ -50,7 +50,7 @@ export default function SevakActionsMenu({
     const hasLogin = Boolean(num(sevak?.has_login));
     items.push({
       key: "reset",
-      icon: "bi-key",
+      icon: "bi-key-fill",
       label: "Reset password",
       note: hasLogin ? null : "No login account",
       disabled: !hasLogin,
@@ -62,7 +62,7 @@ export default function SevakActionsMenu({
   if (mayDeactivate && !isSelf) {
     items.push({
       key: "deactivate",
-      icon: "bi-person-x",
+      icon: "bi-person-x-fill",
       label: "Deactivate",
       danger: true,
       onClick: choose(onDeactivate),
@@ -74,12 +74,12 @@ export default function SevakActionsMenu({
   return (
     <>
       <IconButton
-        size="small"
+        className="seva-card-more"
         onClick={(e) => setAnchor(e.currentTarget)}
         aria-label={`Actions for ${sevak?.full_name || "this sevak"}`}
         aria-haspopup="true"
       >
-        <i className="bi bi-three-dots-vertical"></i>
+        <i className="bi bi-three-dots-vertical" aria-hidden="true"></i>
       </IconButton>
 
       <Menu
@@ -88,16 +88,17 @@ export default function SevakActionsMenu({
         onClose={close}
         anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
         transformOrigin={{ vertical: "top", horizontal: "right" }}
+        PaperProps={{ className: "app-menu" }}
       >
         {items.map((item) => (
           <MenuItem
             key={item.key}
             onClick={item.onClick}
             disabled={item.disabled}
-            sx={item.danger ? { color: "error.main" } : undefined}
+            className={`menu-item${item.danger ? " is-danger" : ""}`}
           >
-            <ListItemIcon sx={item.danger ? { color: "error.main" } : undefined}>
-              <i className={`bi ${item.icon}`}></i>
+            <ListItemIcon>
+              <i className={`bi ${item.icon}`} aria-hidden="true"></i>
             </ListItemIcon>
             <ListItemText primary={item.label} secondary={item.note} />
           </MenuItem>

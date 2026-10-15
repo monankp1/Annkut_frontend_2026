@@ -1,83 +1,94 @@
 // src/components/receipt-books/AddBookModal.jsx
-import React from "react";
-import {
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  FormControl,
-  FormControlLabel,
-  FormLabel,
-  Radio,
-  RadioGroup,
-  Typography,
-  TextField,
-  Button,
-  Box,
-} from "@mui/material";
-import { toast } from "react-toastify";
-import api, { errorText } from "../../api/annkut";
-
-// Receipt books are printed in two sizes, so the size is a radio — but the
-// numbers stay editable, because a book does not always arrive whole. A book
-// printed 1–25 with the first three receipts already torn out is entered as
-// 4–25: it still ends at 25, it just starts later.
+//
+// Receipt books are printed in two sizes, so the size is a one-tap choice —
+// but the numbers stay editable, because a book does not always arrive whole.
+// A book printed 1–25 with the first three receipts already torn out is
+// entered as 4–25: it still ends at 25, it just starts later.
 //
 // That is why `pages` is not sent. The server derives end = start + pages - 1
 // from it, which would turn a start of 4 into 4–28 — receipt numbers the book
 // does not have. Sending start and end outright says exactly what is printed.
+import React from "react";
+import { toast } from "react-toastify";
+import api, { errorText } from "../../api/annkut";
+import { FieldHint, FormError } from "../AuthFields";
+import SevaSheet from "../seva-form/SevaSheet";
+import {
+  Field,
+  SaveButton,
+  advanceOnEnter,
+  focusFirstError,
+} from "../seva-form/SevaFields";
+
 const PAGE_OPTIONS = [25, 10];
 const DEFAULT_PAGES = 25;
+const ORDER = ["book_no", "start_no", "end_no"];
+
+const NUMBER_PROPS = {
+  type: "text",
+  inputMode: "numeric",
+  pattern: "[0-9]*",
+  autoComplete: "off",
+  enterKeyHint: "next",
+};
 
 const AddBookModal = ({ open, onClose, mandal, onAdded }) => {
   const [bookNo, setBookNo] = React.useState("");
-  const [pages, setPages] = React.useState(String(DEFAULT_PAGES));
+  const [pages, setPages] = React.useState(DEFAULT_PAGES);
   const [startNo, setStartNo] = React.useState("");
   const [endNo, setEndNo] = React.useState("");
+  const [errors, setErrors] = React.useState({});
+  const [serverError, setServerError] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
 
   React.useEffect(() => {
     if (open) {
       setBookNo("");
-      setPages(String(DEFAULT_PAGES));
+      setPages(DEFAULT_PAGES);
       setStartNo("");
       setEndNo("");
+      setErrors({});
+      setServerError("");
     }
   }, [open]);
 
-  const digits = (setter) => (e) => setter(e.target.value.replace(/\D/g, ""));
-
   // Blank means "as printed": start at 1, end at the chosen size.
   const start = startNo === "" ? 1 : Number(startNo);
-  const end = endNo === "" ? Number(pages) : Number(endNo);
+  const end = endNo === "" ? pages : Number(endNo);
   const count = end - start + 1;
   const rangeInvalid = start < 1 || end < start;
 
-  // The radio is a preset for the last receipt number, so changing it moves
+  const digits = (setter, key) => (e) => {
+    setter(e.target.value.replace(/\D/g, ""));
+    setErrors((p) => ({ ...p, [key]: undefined }));
+    setServerError("");
+  };
+
+  // The size is a preset for the last receipt number, so changing it moves
   // the end unless the admin has typed one.
-  const choosePages = (e) => {
-    setPages(e.target.value);
+  const choosePages = (p) => {
+    setPages(p);
     setEndNo("");
   };
 
-  const submit = async () => {
-    if (!bookNo) {
-      toast.error("Enter the book number.");
-      return;
-    }
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!mandal?.id) return;
 
-    if (!mandal?.id) {
-      toast.error("Select a mandal first.");
-      return;
-    }
-
+    const errs = {};
+    if (!bookNo) errs.book_no = "Enter the book number.";
     if (rangeInvalid) {
-      toast.error("The start number must be 1 or more, and not past the end.");
+      errs.start_no = "The start must be 1 or more, and not past the end.";
+    }
+    if (Object.keys(errs).length > 0) {
+      setErrors(errs);
+      focusFirstError(errs, ORDER);
       return;
     }
 
     try {
       setSubmitting(true);
+      setServerError("");
       const res = await api.createBook({
         mandal_id: mandal.id,
         book_no: bookNo,
@@ -87,96 +98,112 @@ const AddBookModal = ({ open, onClose, mandal, onAdded }) => {
       toast.success(res?.message || "Receipt book created.");
       onClose?.();
       onAdded?.();
-    } catch (e) {
+    } catch (err) {
       // 409 names the mandal already holding that number — book numbers are
       // unique across the whole organisation, not per mandal.
-      toast.error(errorText(e, "Failed to add book."));
+      setServerError(errorText(err, "Failed to add book."));
     } finally {
       setSubmitting(false);
     }
   };
 
-  return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>Add Book to Mandal</DialogTitle>
-      <DialogContent>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Mandal: <strong>{mandal?.name || "-"}</strong>
-        </Typography>
+  const dirty = Boolean(bookNo || startNo || endNo);
 
-        <TextField
-          fullWidth
-          margin="dense"
-          label="Book Number"
-          inputMode="numeric"
+  return (
+    <SevaSheet
+      open={open}
+      title="Add book"
+      dirty={dirty}
+      busy={submitting}
+      discardTitle="Discard this book?"
+      onClose={onClose}
+      footer={
+        <>
+          <FormError>{serverError}</FormError>
+          <SaveButton busy={submitting} form="add-book-form">
+            Add book
+          </SaveButton>
+        </>
+      }
+    >
+      <div className="receipt-info mt-0 mb-3">
+        <i className="bi bi-geo-alt" aria-hidden="true" />
+        <span>
+          Mandal <strong>{mandal?.name || "—"}</strong>
+        </span>
+      </div>
+
+      <form
+        id="add-book-form"
+        className="auth-form"
+        onSubmit={submit}
+        onKeyDown={advanceOnEnter}
+        noValidate
+      >
+        <Field
+          id="book_no"
+          label="Book number"
           value={bookNo}
-          onChange={digits(setBookNo)}
+          onChange={digits(setBookNo, "book_no")}
+          error={errors.book_no}
+          hint="Unique across the whole organisation."
+          {...NUMBER_PROPS}
         />
 
-        <FormControl component="fieldset" margin="normal">
-          <FormLabel component="legend">Pages</FormLabel>
-          <RadioGroup row name="pages" value={pages} onChange={choosePages}>
+        <div className="auth-field">
+          <span className="field-label" id="pages_label">
+            Receipts in the book
+          </span>
+          <div
+            className="choice-row"
+            role="radiogroup"
+            aria-labelledby="pages_label"
+          >
             {PAGE_OPTIONS.map((p) => (
-              <FormControlLabel
+              <button
                 key={p}
-                value={String(p)}
-                control={<Radio />}
-                label={`${p} pages`}
-              />
+                type="button"
+                role="radio"
+                aria-checked={pages === p}
+                className={`choice-btn${pages === p ? " is-active" : ""}`}
+                onClick={() => choosePages(p)}
+              >
+                {p} receipts
+              </button>
             ))}
-          </RadioGroup>
-        </FormControl>
+          </div>
+        </div>
 
-        <Box display="flex" gap={2}>
-          <TextField
-            margin="dense"
+        <div className="field-pair">
+          <Field
+            id="start_no"
             label="Start receipt no."
-            inputMode="numeric"
-            value={startNo}
-            onChange={digits(setStartNo)}
             placeholder="1"
-            helperText="Leave blank for 1"
-            error={rangeInvalid}
-            fullWidth
+            value={startNo}
+            onChange={digits(setStartNo, "start_no")}
+            {...NUMBER_PROPS}
+            aria-invalid={rangeInvalid}
           />
-          <TextField
-            margin="dense"
+          <Field
+            id="end_no"
             label="End receipt no."
-            inputMode="numeric"
+            placeholder={String(pages)}
             value={endNo}
-            onChange={digits(setEndNo)}
-            placeholder={pages}
-            helperText={`Leave blank for ${pages}`}
-            error={rangeInvalid}
-            fullWidth
+            onChange={digits(setEndNo, "start_no")}
+            {...NUMBER_PROPS}
+            enterKeyHint="done"
+            aria-invalid={rangeInvalid}
           />
-        </Box>
-
-        <Typography
-          variant="body2"
-          color={rangeInvalid ? "error.main" : "text.secondary"}
-          sx={{ mt: 1 }}
-        >
+        </div>
+        <FieldHint status={rangeInvalid ? "error" : "info"}>
           {rangeInvalid
-            ? "The start number must be 1 or more, and not past the end."
+            ? "The start must be 1 or more, and not past the end."
             : `Receipts will be numbered ${start}–${end} (${count} receipt${
                 count === 1 ? "" : "s"
-              }).`}
-        </Typography>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose} color="error" variant="outlined">
-          Cancel
-        </Button>
-        <Button
-          onClick={submit}
-          variant="contained"
-          disabled={submitting || rangeInvalid}
-        >
-          {submitting ? "Saving..." : "Add Book"}
-        </Button>
-      </DialogActions>
-    </Dialog>
+              }). Leave blank for 1–${pages}.`}
+        </FieldHint>
+      </form>
+    </SevaSheet>
   );
 };
 
