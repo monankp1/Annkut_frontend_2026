@@ -4,6 +4,12 @@
 // every xetra, or (inside a mandal) just that mandal. One sevak/get_sevak
 // request does it: the server already filters by area, mandal and pravrutti,
 // and returns rows ordered xetra → mandal → parivar → sevak.
+//
+// With "Include sahyogi forms" on, each sevak's row is followed by every form
+// they collected this year. Forms come from one seva/get_seva request for the
+// whole year and are matched to sevaks by collector, so a sevak's form rows
+// always equal their Filled count — even forms written in another mandal's
+// book.
 import React from "react";
 import {
   Button,
@@ -16,6 +22,7 @@ import {
 import { toast } from "react-toastify";
 import api, { num, errorText } from "../api/annkut";
 import { FormError } from "./AuthFields";
+import { formatDate } from "./receipt-books/BookList";
 import { downloadCsv, slug, toCsv, today } from "../utils/csv";
 
 const fmt = new Intl.NumberFormat("en-IN");
@@ -44,6 +51,52 @@ const COLUMNS = [
   { header: "Amount collected (₹)", value: (r) => num(r.collected_amount) },
 ];
 
+// Who the row belongs to: repeated on every form row, so filtering or sorting
+// in Excel never leaves a form without its sevak.
+const IDENTITY = new Set(["Xetra", "Mandal", "Parivar ID", "Sevak ID", "Name"]);
+
+const onForm = (pick) => (r) => (r.form ? pick(r.form) : "");
+
+// Rows here are { sevak, form } — form is null on the sevak's own row.
+const WITH_FORMS_COLUMNS = [
+  { header: "Row", value: (r) => (r.form ? "Form" : "Sevak") },
+  ...COLUMNS.map((c) => ({
+    header: c.header,
+    value: IDENTITY.has(c.header)
+      ? (r) => c.value(r.sevak)
+      : (r) => (r.form ? "" : c.value(r.sevak)),
+  })),
+  { header: "Book", value: onForm((f) => f.book_no) },
+  { header: "Receipt", value: onForm((f) => num(f.receipt_no)) },
+  { header: "Sahyogi name", value: onForm((f) => f.sahyogi_name) },
+  { header: "Sahyogi mobile", value: onForm((f) => f.sahyogi_number) },
+  { header: "Seva amount (₹)", value: onForm((f) => num(f.seva_amount)) },
+  { header: "Date", value: onForm((f) => formatDate(f.collected_at)) },
+];
+
+/** Book then receipt, the order of the physical books. */
+const byBookPage = (a, b) =>
+  String(a.book_no ?? "").localeCompare(String(b.book_no ?? ""), undefined, {
+    numeric: true,
+  }) || num(a.receipt_no) - num(b.receipt_no);
+
+/**
+ * This year's recorded forms grouped by collector id. Same rule as the
+ * server's Filled count: current year, status "recorded", not deleted.
+ */
+function formsByCollector(forms, year) {
+  const map = new Map();
+  for (const f of forms) {
+    if (f.status && f.status !== "recorded") continue;
+    if (f.year && num(f.year) !== year) continue;
+    const key = String(f.collected_by_id);
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(f);
+  }
+  for (const list of map.values()) list.sort(byBookPage);
+  return map;
+}
+
 /**
  * mode "areas":  pick All or one xetra. `areas` = [{ id, name, sevaks }].
  * mode "mandal": export `mandal` = { id, name, sevaks }.
@@ -63,6 +116,7 @@ export default function ExportSevaksDialog({
 }) {
   const [choice, setChoice] = React.useState("all");
   const [yuva, setYuva] = React.useState(yuvaDefault);
+  const [withForms, setWithForms] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
 
@@ -70,6 +124,7 @@ export default function ExportSevaksDialog({
     if (open) {
       setChoice("all");
       setYuva(yuvaDefault);
+      setWithForms(false);
       setError("");
       setBusy(false);
     }
@@ -98,20 +153,58 @@ export default function ExportSevaksDialog({
     const label =
       mode === "mandal" ? mandal?.name : area ? area.name : allLabel;
 
+    const year = new Date().getFullYear();
+
     setBusy(true);
     setError("");
     try {
-      const res = await api.sevaks(filters);
-      const rows = Array.isArray(res?.sevak) ? res.sevak : [];
-      if (rows.length === 0) {
+      const [res, formsRes] = await Promise.all([
+        api.sevaks(filters),
+        withForms ? api.sevaList({ year }) : null,
+      ]);
+      const sevaks = Array.isArray(res?.sevak) ? res.sevak : [];
+      if (sevaks.length === 0) {
         setError("There are no sevaks to export for this choice.");
         return;
       }
-      const name = ["annkut-sevaks", slug(label), yuva ? "yuva" : "", today()]
+
+      const name = [
+        "annkut-sevaks",
+        slug(label),
+        yuva ? "yuva" : "",
+        withForms ? "with-forms" : "",
+        today(),
+      ]
         .filter(Boolean)
         .join("_");
-      downloadCsv(`${name}.csv`, toCsv(rows, COLUMNS));
-      toast.success(`Downloaded ${fmt.format(rows.length)} sevaks.`);
+
+      if (!withForms) {
+        downloadCsv(`${name}.csv`, toCsv(sevaks, COLUMNS));
+        toast.success(`Downloaded ${fmt.format(sevaks.length)} sevaks.`);
+        onClose?.();
+        return;
+      }
+
+      const grouped = formsByCollector(
+        Array.isArray(formsRes?.seva) ? formsRes.seva : [],
+        year,
+      );
+      const rows = [];
+      let formCount = 0;
+      for (const sevak of sevaks) {
+        rows.push({ sevak, form: null });
+        for (const form of grouped.get(String(sevak.id)) || []) {
+          rows.push({ sevak, form });
+          formCount += 1;
+        }
+      }
+
+      downloadCsv(`${name}.csv`, toCsv(rows, WITH_FORMS_COLUMNS));
+      toast.success(
+        `Downloaded ${fmt.format(sevaks.length)} sevaks and ${fmt.format(
+          formCount,
+        )} forms.`,
+      );
       onClose?.();
     } catch (e) {
       setError(errorText(e, "Could not export the sevak list."));
@@ -175,10 +268,27 @@ export default function ExportSevaksDialog({
             <span>Yuva Pravrutti only</span>
           </label>
 
+          <label className={`switch-card${withForms ? " is-on" : ""}`}>
+            <span className="switch-card-text">
+              <span className="switch-card-title">Include sahyogi forms</span>
+              <span className="switch-card-sub">
+                Each sevak's forms listed under them
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              role="switch"
+              className="switch-input"
+              checked={withForms}
+              aria-checked={withForms}
+              onChange={(e) => setWithForms(e.target.checked)}
+            />
+          </label>
+
           <p className="dialog-subtitle mt-2 mb-0">
-            One row per sevak, grouped by xetra → mandal → parivar: IDs, name,
-            mobile, pankh, target, filled, ₹500 and ₹1,000+ forms, and amount
-            collected.
+            {withForms
+              ? "A row per sevak, followed by their forms this year: book, receipt, sahyogi name and mobile, amount and date."
+              : "One row per sevak, grouped by xetra → mandal → parivar: IDs, name, mobile, pankh, target, filled, ₹500 and ₹1,000+ forms, and amount collected."}
           </p>
 
           <FormError>{error}</FormError>

@@ -2126,6 +2126,88 @@
   accent-color: #ed3237;
 }
 
+/* A labelled on/off switch in a bordered card (export "Include forms"). */
+.auth-form .switch-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0.5rem 0 0;
+  padding: 0.75rem 1rem;
+  min-height: 56px;
+  border: 1.5px solid #d6d6d6;
+  border-radius: 12px;
+  font-weight: 400;
+  color: inherit;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+.auth-form .switch-card.is-on {
+  border-color: #f3b4b6;
+  background: #fdecec;
+}
+
+.switch-card-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.switch-card-title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #222222;
+}
+
+.switch-card-sub {
+  font-size: 0.8125rem;
+  color: #6b6b6b;
+}
+
+.auth-form .switch-card .switch-input {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex-shrink: 0;
+  width: 44px;
+  height: 26px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 13px;
+  background: #c9c9c9;
+  box-shadow: none;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.auth-form .switch-card .switch-input::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s;
+}
+
+.auth-form .switch-card .switch-input:checked {
+  background: #ed3237;
+}
+
+.auth-form .switch-card .switch-input:checked::after {
+  transform: translateX(18px);
+}
+
+.auth-form .switch-card .switch-input:focus-visible {
+  outline: 2px solid #ed3237;
+  outline-offset: 2px;
+}
+
 .seva-boxes {
   display: flex;
   flex-direction: column;
